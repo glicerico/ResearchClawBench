@@ -785,7 +785,12 @@ body { height: 100vh; font-family: var(--font); font-size: 17px; line-height: 1.
 }
 #footer-links a[title="GitHub"]::before { background-image: url("logos/github.svg"); }
 #footer-links a[title="Hugging Face Dataset"]::before { background-image: url("logos/huggingface.svg"); }
-#footer-links a[title="arXiv"]::before { background-image: url("logos/arxiv.svg"); }
+#footer-links a[title="arXiv"]::before {
+    border-radius: 50%;
+    background-color: rgba(210, 210, 210, 0.9);
+    background-image: url("logos/arxiv.svg");
+    background-size: 13px 13px;
+}
 
 /* --- Scrollbar ------------------------------------------------------- */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
