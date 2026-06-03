@@ -451,7 +451,8 @@ function renderLeaderboard(data) {
   function renderScoreBlock(entry, clickable, extraClass = '') {
     if (!entry || !Number.isFinite(entry.score)) return '<span class="score-cell score-cell-empty">-</span>';
     const scoreHtml = `<span class="score-cell" style="${cellStyle(entry.score)}">${entry.score.toFixed(1)}</span>`;
-    const inner = `<div class="leaderboard-score-wrap">${scoreHtml}${renderMetricLines(entry)}</div>`;
+    const detailsState = getRunDetailsState(entry);
+    const inner = `<div class="leaderboard-score-wrap">${scoreHtml}${runDetailsMarkerHtml(detailsState, 'leaderboard-details-marker')}${renderMetricLines(entry)}</div>`;
     const tdClass = `leaderboard-score-td${extraClass ? ` ${extraClass}` : ''}`;
     if (!clickable) return `<td class="${tdClass}">${inner}</td>`;
     const handler = entry.details_exported === false
@@ -466,7 +467,12 @@ function renderLeaderboard(data) {
       const values = scored.map(e => e[key]).filter(Number.isFinite);
       return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
     };
-    return { score: average('score'), duration_seconds: average('duration_seconds'), cost_usd: average('cost_usd') };
+    return {
+      score: average('score'),
+      duration_seconds: average('duration_seconds'),
+      cost_usd: average('cost_usd'),
+      details_state: getEntriesDetailsState(scored),
+    };
   }
   function frontierEntry(task) {
     return data.agents
@@ -477,7 +483,7 @@ function renderLeaderboard(data) {
   function renderSummaryCell(entry) {
     if (!entry || !Number.isFinite(entry.score)) return '<td class="no-score leaderboard-static-cell">-</td>';
     const scoreHtml = `<span class="score-cell" style="${cellStyle(entry.score)}">${entry.score.toFixed(1)}</span>`;
-    return `<td class="leaderboard-score-td leaderboard-static-cell"><div class="leaderboard-score-wrap">${scoreHtml}${renderMetricLines(entry)}</div></td>`;
+    return `<td class="leaderboard-score-td leaderboard-static-cell"><div class="leaderboard-score-wrap">${scoreHtml}${runDetailsMarkerHtml(getRunDetailsState(entry), 'leaderboard-details-marker')}${renderMetricLines(entry)}</div></td>`;
   }
   function renderSection(key, title, tableHtml, hint, note = '') {
     const noteHtml = note ? `<div class="leaderboard-section-note">${note}</div>` : '';
@@ -606,6 +612,7 @@ function renderLeaderboard(data) {
       ${renderSection('summary', 'By Domain', summaryHtml, 'Slide to view more domains')}
       ${renderSection('task', 'By Task', taskHtml, 'Slide to view more agents', '<span class="leaderboard-note-icon" aria-hidden="true">👉</span> Click scored cells to open run details when available')}
     </div>
+    <div class="leaderboard-detail-legend">${runDetailsLegendHtml()}</div>
     <div class="dashboard-footnote leaderboard-footnote">${researchHarnessFootnoteHtml()}</div>`;
 
   container.innerHTML = html;
@@ -860,9 +867,11 @@ async function loadRuns(taskId) {
     const fmt = ts.length >= 15 ? `${ts.slice(0,4)}-${ts.slice(4,6)}-${ts.slice(6,8)} ${ts.slice(9,11)}:${ts.slice(11,13)}` : ts;
     const modelLabel = r.model_display || r.model;
     const modelStr = modelLabel ? `<span class="run-item-model">${esc(modelLabel)}</span>` : '';
+    const detailsMarker = STATIC_MODE ? runDetailsMarkerHtml(getRunDetailsState(r), 'run-detail-marker') : '';
     return `
     <div class="run-item ${r.run_id===state.currentRunId?'active':''}" data-run-id="${r.run_id}">
       <span class="status-dot ${r.status}"></span>
+      ${detailsMarker}
       <div class="run-item-info" onclick="selectRun('${r.run_id}')">
         <div class="run-item-task">${agentLogoHtml(r.agent_name, 14)} ${r.agent_name||'Agent'} ${modelStr}</div>
         <div class="run-item-time">${fmt}</div>
@@ -1911,6 +1920,36 @@ function agentLogoHtml(name, size = 16) {
   return '';
 }
 
+function getRunDetailsState(entry) {
+  if (!entry) return 'none';
+  if (entry.details_state) return entry.details_state;
+  return entry.details_exported === false ? 'summary' : 'full';
+}
+
+function getEntriesDetailsState(entries) {
+  const valid = (entries || []).filter(Boolean);
+  if (!valid.length) return 'none';
+  const summaryCount = valid.filter(entry => entry.details_exported === false).length;
+  if (summaryCount === 0) return 'full';
+  if (summaryCount === valid.length) return 'summary';
+  return 'mixed';
+}
+
+function runDetailsMarkerHtml(state, extraClass = '') {
+  const normalized = ['full', 'summary', 'mixed'].includes(state) ? state : 'full';
+  const labels = {
+    full: 'Full run details available',
+    summary: 'Summary-only result; full run details were not exported',
+    mixed: 'Mixed detail availability in this aggregate cell',
+  };
+  const icons = { full: '●', summary: '○', mixed: '◐' };
+  return `<span class="details-marker details-marker-${normalized}${extraClass ? ` ${extraClass}` : ''}" title="${esc(labels[normalized])}" aria-label="${esc(labels[normalized])}">${icons[normalized]}</span>`;
+}
+
+function runDetailsLegendHtml() {
+  return `${runDetailsMarkerHtml('full')} Full run details available · ${runDetailsMarkerHtml('summary')} Summary-only score, no run details exported · ${runDetailsMarkerHtml('mixed')} Mixed detail availability in aggregate cells`;
+}
+
 function showRunDetailsUnavailableNotice() {
   const existing = document.querySelector('.run-details-notice-overlay');
   if (existing) existing.remove();
@@ -1923,6 +1962,7 @@ function showRunDetailsUnavailableNotice() {
       <h3>Full run details are not exported</h3>
       <p>Full run details for evaluations after May 22, 2026 are not exported due to space limits. All results were produced under the same evaluation setting.</p>
       <p>You can continue browsing other available runs with full details.</p>
+      <div class="run-details-notice-legend">${runDetailsLegendHtml()}</div>
       <button class="run-details-notice-action" type="button">Continue browsing</button>
     </div>`;
   const close = () => overlay.remove();
