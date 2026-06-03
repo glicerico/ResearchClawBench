@@ -1963,6 +1963,7 @@ function showRunDetailsUnavailableNotice() {
       <h3>Full run details are not exported</h3>
       <p>Full run details for some evaluations are omitted only to save site storage. This does not indicate an agent failure or a different evaluation setting.</p>
       <p>You can continue browsing other available runs with full details.</p>
+      <p>If you need the complete output log for this result, please contact <a href="mailto:xu_wanghan@sjtu.edu.cn">xu_wanghan@sjtu.edu.cn</a>.</p>
       <div class="run-details-notice-legend">${runDetailsLegendHtml()}</div>
       <button class="run-details-notice-action" type="button">Continue browsing</button>
     </div>`;
