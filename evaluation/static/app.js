@@ -448,11 +448,12 @@ function renderLeaderboard(data) {
     if (!costText) return `<span class="leaderboard-cell-meta"><span>${timeText}</span></span>`;
     return `<span class="leaderboard-cell-meta"><span>${costText}</span><span>${timeText}</span></span>`;
   }
-  function renderScoreBlock(entry, clickable, extraClass = '') {
+  function renderScoreBlock(entry, clickable, extraClass = '', showDetailsMarker = true) {
     if (!entry || !Number.isFinite(entry.score)) return '<span class="score-cell score-cell-empty">-</span>';
     const scoreHtml = `<span class="score-cell" style="${cellStyle(entry.score)}">${entry.score.toFixed(1)}</span>`;
     const detailsState = getRunDetailsState(entry);
-    const inner = `<div class="leaderboard-score-wrap">${scoreHtml}${runDetailsMarkerHtml(detailsState, 'leaderboard-details-marker')}${renderMetricLines(entry)}</div>`;
+    const detailsHtml = showDetailsMarker ? runDetailsMarkerHtml(detailsState, 'leaderboard-details-marker') : '';
+    const inner = `<div class="leaderboard-score-wrap">${scoreHtml}${detailsHtml}${renderMetricLines(entry)}</div>`;
     const tdClass = `leaderboard-score-td${extraClass ? ` ${extraClass}` : ''}`;
     if (!clickable) return `<td class="${tdClass}">${inner}</td>`;
     const handler = entry.details_exported === false
@@ -581,7 +582,7 @@ function renderLeaderboard(data) {
     });
     const frontier = frontierEntry(task);
     if (frontier) {
-      taskHtml += renderScoreBlock(frontier, false);
+      taskHtml += renderScoreBlock(frontier, false, '', false);
     } else {
       taskHtml += '<td class="no-score">-</td>';
     }
@@ -597,11 +598,11 @@ function renderLeaderboard(data) {
       taskHtml += `<td class="no-score${dividerClass ? ` ${dividerClass}` : ''}">-</td>`;
       return;
     }
-    taskHtml += renderScoreBlock(avgEntry, false, dividerClass);
+    taskHtml += renderScoreBlock(avgEntry, false, dividerClass, false);
   });
   const frontierAvgEntry = averageEntry(data.tasks.map(frontierEntry).filter(Boolean));
   if (frontierAvgEntry) {
-    taskHtml += renderScoreBlock(frontierAvgEntry, false);
+    taskHtml += renderScoreBlock(frontierAvgEntry, false, '', false);
   } else {
     taskHtml += '<td class="no-score">-</td>';
   }
@@ -1932,22 +1933,22 @@ function getEntriesDetailsState(entries) {
   const summaryCount = valid.filter(entry => entry.details_exported === false).length;
   if (summaryCount === 0) return 'full';
   if (summaryCount === valid.length) return 'summary';
-  return 'mixed';
+  return 'none';
 }
 
 function runDetailsMarkerHtml(state, extraClass = '') {
-  const normalized = ['full', 'summary', 'mixed'].includes(state) ? state : 'full';
+  const normalized = ['full', 'summary'].includes(state) ? state : '';
+  if (!normalized) return '';
   const labels = {
     full: 'Full run details available',
-    summary: 'Summary-only result; full run details were not exported',
-    mixed: 'Mixed detail availability in this aggregate cell',
+    summary: 'Summary-only result; run details were omitted only to save site storage',
   };
-  const icons = { full: '●', summary: '○', mixed: '◐' };
+  const icons = { full: '●', summary: '○' };
   return `<span class="details-marker details-marker-${normalized}${extraClass ? ` ${extraClass}` : ''}" title="${esc(labels[normalized])}" aria-label="${esc(labels[normalized])}">${icons[normalized]}</span>`;
 }
 
 function runDetailsLegendHtml() {
-  return `${runDetailsMarkerHtml('full')} Full run details available · ${runDetailsMarkerHtml('summary')} Summary-only score, no run details exported · ${runDetailsMarkerHtml('mixed')} Mixed detail availability in aggregate cells`;
+  return `${runDetailsMarkerHtml('full')} Full run details available · ${runDetailsMarkerHtml('summary')} Summary-only score; full details are omitted only to save site storage, not because of an agent issue.`;
 }
 
 function showRunDetailsUnavailableNotice() {
@@ -1960,7 +1961,7 @@ function showRunDetailsUnavailableNotice() {
       <button class="run-details-notice-close" type="button" aria-label="Close">&times;</button>
       <div class="run-details-notice-kicker">Summary-only result</div>
       <h3>Full run details are not exported</h3>
-      <p>Full run details for evaluations after May 22, 2026 are not exported due to space limits. All results were produced under the same evaluation setting.</p>
+      <p>Full run details for some evaluations are omitted only to save site storage. This does not indicate an agent failure or a different evaluation setting.</p>
       <p>You can continue browsing other available runs with full details.</p>
       <div class="run-details-notice-legend">${runDetailsLegendHtml()}</div>
       <button class="run-details-notice-action" type="button">Continue browsing</button>

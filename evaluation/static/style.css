@@ -287,7 +287,7 @@ body { height: 100vh; font-family: var(--font); font-size: 17px; line-height: 1.
 .leaderboard th { font-weight: 600; color: var(--text-secondary); font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; position: sticky; top: 0; background: var(--bg-card); }
 .leaderboard th:first-child, .leaderboard td:first-child { text-align: left; font-weight: 500; position: sticky; left: 0; background: var(--bg-card); z-index: 2; min-width: 148px; box-shadow: 1px 0 0 var(--border); }
 .leaderboard thead th:first-child { z-index: 4; }
-.leaderboard th:not(:first-child), .leaderboard td:not(:first-child) { min-width: 132px; }
+.leaderboard th:not(:first-child), .leaderboard td:not(:first-child) { min-width: 144px; }
 .leaderboard-agent-head { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .leaderboard-agent-name { display: inline-flex; align-items: center; gap: 6px; }
 .leaderboard-agent-model { font-size: 10px; color: var(--text-tertiary); letter-spacing: 0.06em; }
@@ -311,7 +311,7 @@ body { height: 100vh; font-family: var(--font); font-size: 17px; line-height: 1.
 .leaderboard-summary { min-width: max-content; }
 .leaderboard-summary th, .leaderboard-summary td { padding: 5px 4px; }
 .leaderboard-summary th:first-child, .leaderboard-summary td:first-child { min-width: 74px; }
-.leaderboard-summary th:not(:first-child), .leaderboard-summary td:not(:first-child) { width: 126px; min-width: 126px; max-width: 126px; }
+.leaderboard-summary th:not(:first-child), .leaderboard-summary td:not(:first-child) { width: 144px; min-width: 144px; max-width: 144px; }
 .leaderboard-group-start-row td { border-top: 3px solid var(--border-strong); }
 .leaderboard-group-divider-left { box-shadow: inset 3px 0 0 var(--border-strong); }
 .leaderboard-summary td { cursor: default; }
@@ -329,7 +329,6 @@ body { height: 100vh; font-family: var(--font); font-size: 17px; line-height: 1.
 .details-marker { display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; font-size: 10px; line-height: 1; font-family: var(--font); font-weight: 700; vertical-align: middle; }
 .details-marker-full { color: var(--ok); }
 .details-marker-summary { color: var(--text-tertiary); }
-.details-marker-mixed { color: var(--warn); }
 /* welcome fallback (no data) */
 .welcome-card { max-width: 480px; margin: 100px auto; text-align: center; }
 .welcome-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.25; }
