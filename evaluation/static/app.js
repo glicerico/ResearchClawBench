@@ -1906,8 +1906,56 @@ function protectMarkdownMath(text) {
     mathSegments.push(match);
     return token;
   });
+  source = protectInlineDollarMath(source, marker, mathSegments);
   source = source.replace(new RegExp(`@@${marker}_CODE_(\\d+)@@`, 'g'), (_, idx) => codeSegments[Number(idx)] || '');
   return { source, mathSegments, marker };
+}
+
+function protectInlineDollarMath(source, marker, mathSegments) {
+  let output = '';
+  let cursor = 0;
+  while (cursor < source.length) {
+    const start = source.indexOf('$', cursor);
+    if (start === -1) {
+      output += source.slice(cursor);
+      break;
+    }
+    if (source[start - 1] === '\\' || source[start + 1] === '$') {
+      output += source.slice(cursor, start + 1);
+      cursor = start + 1;
+      continue;
+    }
+    let end = start + 1;
+    while (true) {
+      end = source.indexOf('$', end);
+      if (end === -1 || end - start > 300 || source.slice(start + 1, end).includes('\n')) {
+        output += source.slice(cursor, start + 1);
+        cursor = start + 1;
+        break;
+      }
+      if (source[end - 1] === '\\' || source[end + 1] === '$') {
+        end += 1;
+        continue;
+      }
+      const body = source.slice(start + 1, end);
+      if (!looksLikeInlineMath(body)) {
+        output += source.slice(cursor, end + 1);
+      } else {
+        const token = `@@${marker}_MATH_${mathSegments.length}@@`;
+        mathSegments.push(`$${body}$`);
+        output += source.slice(cursor, start) + token;
+      }
+      cursor = end + 1;
+      break;
+    }
+  }
+  return output;
+}
+
+function looksLikeInlineMath(body) {
+  const text = String(body || '').trim();
+  if (!text || /^\d+(?:[.,]\d+)?$/.test(text)) return false;
+  return /\\[a-zA-Z]+|[_^=<>+\-*/]|[{}]/.test(text);
 }
 
 function restoreMathTokens(html, protectedText) {
@@ -1959,6 +2007,7 @@ function typesetMath(root) {
       delimiters: [
         {left: '$$', right: '$$', display: true},
         {left: '\\[', right: '\\]', display: true},
+        {left: '$', right: '$', display: false},
         {left: '\\(', right: '\\)', display: false},
       ],
       ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
