@@ -311,7 +311,7 @@ body { height: 100vh; font-family: var(--font); font-size: 17px; line-height: 1.
 .leaderboard-summary { min-width: max-content; }
 .leaderboard-summary th, .leaderboard-summary td { padding: 5px 4px; }
 .leaderboard-summary th:first-child, .leaderboard-summary td:first-child { min-width: 74px; }
-.leaderboard-summary th:not(:first-child), .leaderboard-summary td:not(:first-child) { width: 144px; min-width: 144px; max-width: 144px; }
+.leaderboard-summary th:not(:first-child), .leaderboard-summary td:not(:first-child) { width: 126px; min-width: 126px; max-width: 126px; }
 .leaderboard-group-start-row td { border-top: 3px solid var(--border-strong); }
 .leaderboard-group-divider-left { box-shadow: inset 3px 0 0 var(--border-strong); }
 .leaderboard-summary td { cursor: default; }
@@ -565,7 +565,37 @@ body { height: 100vh; font-family: var(--font); font-size: 17px; line-height: 1.
 .file-md-render pre { background: var(--bg-inset); padding: 12px; border-radius: var(--radius-sm); overflow-x: auto; margin: 8px 0; }
 .file-md-render pre code { background: none; padding: 0; }
 .file-md-render strong { font-weight: 600; }
-.file-md-render img { max-width: 100%; border-radius: var(--radius-sm); margin: 8px 0; }
+.file-md-render img, .report-card img {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+    border-radius: var(--radius-sm);
+    margin: 8px 0;
+}
+.file-md-render table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+.file-md-render th, .file-md-render td { padding: 5px 8px; border: 1px solid var(--border); text-align: left; vertical-align: top; }
+.file-md-render th { background: var(--bg-inset); font-weight: 600; }
+.file-md-render .katex, .report-card .katex { color: var(--text); font-size: 1.02em; }
+.file-md-render .katex-display, .report-card .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 6px 0;
+    margin: 10px 0;
+}
+.file-md-render .katex-display > .katex, .report-card .katex-display > .katex {
+    white-space: nowrap;
+}
+.file-md-render .mermaid-chart, .report-card .mermaid-chart {
+    max-width: 100%;
+    overflow-x: auto;
+    margin: 10px 0;
+}
+.file-md-render .mermaid-chart svg, .report-card .mermaid-chart svg {
+    max-width: 100%;
+    height: auto;
+}
 
 /* chat column */
 .research-col-chat { background: var(--bg-card); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
@@ -688,7 +718,6 @@ body { height: 100vh; font-family: var(--font); font-size: 17px; line-height: 1.
 .report-card h2 { font-size: 18px; font-weight: 600; margin: 16px 0 6px; }
 .report-card h3 { font-size: 15.5px; font-weight: 600; margin: 12px 0 4px; }
 .report-card p  { margin-bottom: 8px; color: var(--text); font-size: 15px; }
-.report-card img { max-width: 100%; border-radius: var(--radius-sm); margin: 8px 0; }
 .report-card code { background: var(--bg-inset); padding: 2px 4px; border-radius: 3px; font-family: var(--mono); font-size: 13px; }
 .report-card pre { background: var(--bg-terminal); color: #d4d4d8; padding: 12px; border-radius: var(--radius-sm); overflow-x: auto; margin: 8px 0; font-size: 13px; border: 1px solid rgba(255,255,255,0.06); }
 .report-card pre code { background: none; padding: 0; color: inherit; }

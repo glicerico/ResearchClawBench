@@ -484,7 +484,7 @@ function renderLeaderboard(data) {
   function renderSummaryCell(entry) {
     if (!entry || !Number.isFinite(entry.score)) return '<td class="no-score leaderboard-static-cell">-</td>';
     const scoreHtml = `<span class="score-cell" style="${cellStyle(entry.score)}">${entry.score.toFixed(1)}</span>`;
-    return `<td class="leaderboard-score-td leaderboard-static-cell"><div class="leaderboard-score-wrap">${scoreHtml}${runDetailsMarkerHtml(getRunDetailsState(entry), 'leaderboard-details-marker')}${renderMetricLines(entry)}</div></td>`;
+    return `<td class="leaderboard-score-td leaderboard-static-cell"><div class="leaderboard-score-wrap">${scoreHtml}${renderMetricLines(entry)}</div></td>`;
   }
   function renderSection(key, title, tableHtml, hint, note = '') {
     const noteHtml = note ? `<div class="leaderboard-section-note">${note}</div>` : '';
@@ -977,14 +977,16 @@ async function selectRun(runId) {
     } else { termBody.innerHTML = '<div class="placeholder">No agent output</div>'; }
     // Report
     if (runData && runData.report) {
-      let html = marked.parse(runData.report);
+      let html = renderMarkdown(runData.report);
       html = html.replace(/(<img[^>]*src=")([^"]+)(")/g, (m, pre, src, post) => {
-        if (src.startsWith('http') || src.startsWith('/')) return m;
+        if (isExternalOrInlineImageSrc(src)) return m;
         let resolved = 'report/' + src;
         while (resolved.includes('../')) resolved = resolved.replace(/[^/]+\/\.\.\//g, '');
         return pre + `data/runs/${runId}/workspace/${resolved}` + post;
       });
-      document.getElementById('report-content').innerHTML = html;
+      const reportEl = document.getElementById('report-content');
+      reportEl.innerHTML = html;
+      enhanceRenderedMarkdown(reportEl);
     } else { document.getElementById('report-content').innerHTML = '<div class="placeholder">No report</div>'; }
     // Score
     document.getElementById('score-total-area').innerHTML = '';
@@ -1609,12 +1611,12 @@ async function renderFileContent(path, name, url, evt, baseUrl, filePath) {
       const truncNote = truncated ? `<div style="padding:8px;font-size:12px;color:var(--text-tertiary);border-top:1px solid var(--border)">File truncated (too large to preview in full)</div>` : '';
       if (ext === 'md') {
         // Render markdown with image URL rewriting
-        let html = marked.parse(text);
+        let html = renderMarkdown(text);
         // Rewrite relative image src to API URLs
         // filePath e.g. "report/report.md" -> dir = "report/"
         const fileDir = filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/') + 1) : '';
         html = html.replace(/(<img\s[^>]*src=")([^"]+)(")/g, (match, pre, src, post) => {
-          if (src.startsWith('http') || src.startsWith('/')) return match;
+          if (isExternalOrInlineImageSrc(src)) return match;
           // Resolve relative path: ../outputs/fig.png from report/ -> outputs/fig.png
           let resolved = fileDir + src;
           // Simplify ../ references
@@ -1624,6 +1626,7 @@ async function renderFileContent(path, name, url, evt, baseUrl, filePath) {
           return pre + baseUrl + encodeURIComponent(resolved) + post;
         });
         div.innerHTML = `<div class="file-md-render">${html}</div>${truncNote}`;
+        enhanceRenderedMarkdown(div.querySelector('.file-md-render'));
       } else {
         const langMap = {py:'python',js:'javascript',json:'json',sh:'bash',yml:'yaml',yaml:'yaml',txt:null,csv:null,mat:null};
         const lang = langMap[ext];
@@ -1668,11 +1671,9 @@ async function loadReport(runId) {
     if (state.currentRunId !== runId) return;
     if (!res.ok) { document.getElementById('report-content').innerHTML = '<div class="placeholder">No report generated yet</div>'; return; }
     const data = await res.json();
-    marked.setOptions({
-      highlight: (code, lang) => lang && hljs.getLanguage(lang) ? hljs.highlight(code,{language:lang}).value : hljs.highlightAuto(code).value,
-      breaks: true,
-    });
-    document.getElementById('report-content').innerHTML = marked.parse(data.markdown || '');
+    const reportEl = document.getElementById('report-content');
+    reportEl.innerHTML = renderMarkdown(data.markdown || '');
+    enhanceRenderedMarkdown(reportEl);
   } catch (_) { document.getElementById('report-content').innerHTML = '<div class="placeholder">No report</div>'; }
 }
 
@@ -1882,6 +1883,119 @@ function backToDashboard() {
 
 /* ── Util ────────────────────────────────────────────────────────────── */
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+let mermaidRenderCounter = 0;
+
+function stripOuterMarkdownFence(text) {
+  const source = String(text || '').trim();
+  const match = source.match(/^```(?:markdown|md)?[ \t]*\n([\s\S]*?)\n```$/i);
+  return match ? match[1] : String(text || '');
+}
+
+function protectMarkdownMath(text) {
+  const marker = `RCB_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const codeSegments = [];
+  let source = String(text || '').replace(/```[\s\S]*?```|`[^`\n]*`/g, (match) => {
+    const token = `@@${marker}_CODE_${codeSegments.length}@@`;
+    codeSegments.push(match);
+    return token;
+  });
+  const mathSegments = [];
+  source = source.replace(/(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\))/g, (match) => {
+    const token = `@@${marker}_MATH_${mathSegments.length}@@`;
+    mathSegments.push(match);
+    return token;
+  });
+  source = source.replace(new RegExp(`@@${marker}_CODE_(\\d+)@@`, 'g'), (_, idx) => codeSegments[Number(idx)] || '');
+  return { source, mathSegments, marker };
+}
+
+function restoreMathTokens(html, protectedText) {
+  const tokenPattern = new RegExp(`@@${protectedText.marker}_MATH_(\\d+)@@`, 'g');
+  return html.replace(tokenPattern, (_, idx) => esc(protectedText.mathSegments[Number(idx)] || ''));
+}
+
+function sanitizeMarkdownHtml(html) {
+  if (typeof DOMPurify === 'undefined') return html;
+  return DOMPurify.sanitize(html);
+}
+
+function renderMarkdown(text) {
+  const source = stripOuterMarkdownFence(text);
+  if (typeof marked === 'undefined') return esc(source);
+  const protectedText = protectMarkdownMath(source);
+  const html = marked.parse(protectedText.source, {
+    gfm: true,
+    breaks: false,
+    highlight: (code, lang) => {
+      if (typeof hljs === 'undefined') return esc(code);
+      return lang && hljs.getLanguage(lang)
+        ? hljs.highlight(code, { language: lang, ignoreIllegals: true }).value
+        : hljs.highlightAuto(code).value;
+    },
+  });
+  return restoreMathTokens(sanitizeMarkdownHtml(html), protectedText);
+}
+
+function isExternalOrInlineImageSrc(src) {
+  const value = String(src || '').trim().toLowerCase();
+  return value.startsWith('http://')
+    || value.startsWith('https://')
+    || value.startsWith('//')
+    || value.startsWith('/')
+    || value.startsWith('blob:')
+    || value.startsWith('data:image/');
+}
+
+function enhanceRenderedMarkdown(root) {
+  typesetMath(root);
+  renderMermaidCharts(root);
+}
+
+function typesetMath(root) {
+  if (!root || typeof renderMathInElement !== 'function') return;
+  try {
+    renderMathInElement(root, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '\\[', right: '\\]', display: true},
+        {left: '\\(', right: '\\)', display: false},
+      ],
+      ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+      throwOnError: false,
+    });
+  } catch (_) {}
+}
+
+function renderMermaidCharts(root) {
+  if (!root || typeof mermaid === 'undefined') return;
+  try {
+    if (!window.__rcbMermaidInitialized) {
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: 'strict',
+        theme: document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default',
+      });
+      window.__rcbMermaidInitialized = true;
+    }
+    root.querySelectorAll('pre code.language-mermaid').forEach((code) => {
+      const pre = code.closest('pre');
+      if (!pre || pre.dataset.mermaidRendered === '1') return;
+      pre.dataset.mermaidRendered = '1';
+      const holder = document.createElement('div');
+      holder.className = 'mermaid-chart';
+      const id = `rcb-mermaid-${++mermaidRenderCounter}`;
+      mermaid.render(id, code.textContent || '').then(({ svg }) => {
+        holder.innerHTML = typeof DOMPurify === 'undefined'
+          ? svg
+          : DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } });
+        pre.replaceWith(holder);
+      }).catch(() => {
+        pre.dataset.mermaidRendered = '0';
+      });
+    });
+  } catch (_) {}
+}
 
 function getAgentBaseLabel(name) {
   if (!name) return '';
