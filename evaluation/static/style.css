@@ -697,9 +697,9 @@ body { height: 100vh; font-family: var(--font); font-size: 17px; line-height: 1.
 /* === Evaluation Layout (3-column) ==================================== */
 .eval-layout {
     display: grid;
-    grid-template-columns: 1fr 1fr 340px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 340px;
     gap: 1px;
-    flex: 1; min-height: 0;
+    flex: 1; min-height: 0; min-width: 0;
     background: var(--border);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -708,11 +708,11 @@ body { height: 100vh; font-family: var(--font); font-size: 17px; line-height: 1.
 .eval-col {
     display: flex; flex-direction: column;
     background: var(--bg-card); backdrop-filter: blur(16px);
-    overflow: hidden; min-height: 0;
+    overflow: hidden; min-height: 0; min-width: 0;
 }
 
 /* report column */
-.eval-col-report .col-body { padding: 16px; overflow: auto; scrollbar-gutter: stable; }
+.eval-col-report .col-body { padding: 16px; overflow: auto; scrollbar-gutter: stable; min-width: 0; }
 .report-card { line-height: 1.7; padding: 0; margin: 0; border: none; background: none; backdrop-filter: none; }
 .report-card h1 { font-size: 21.5px; font-weight: 700; margin: 20px 0 8px; letter-spacing: -0.3px; }
 .report-card h2 { font-size: 18px; font-weight: 600; margin: 16px 0 6px; }
