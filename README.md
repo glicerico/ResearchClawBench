@@ -38,12 +38,12 @@ Unlike benchmarks that test coding ability or factual recall, ResearchClawBench 
 <tr>
 <td align="center" width="25%">🔄<br/><b>Two-Stage Pipeline</b><br/><sub>Autonomous research + rigorous peer-review-style evaluation</sub></td>
 <td align="center" width="25%">🧪<br/><b>40 Real-Science Tasks</b><br/><sub>10 disciplines, curated datasets from published papers</sub></td>
-<td align="center" width="25%">👁️<br/><b>Expert-Annotated Data</b><br/><sub>Tasks, checklists & datasets curated by domain experts</sub></td>
+<td align="center" width="25%">👁️<br/><b>Expert-Annotated Data</b><br/><sub>Tasks, rubrics (checklists) & datasets curated by domain experts</sub></td>
 <td align="center" width="25%">🤖<br/><b>Multi-Agent Support</b><br/><sub>Claude Code, Codex CLI, OpenClaw, ResearchClaw, ... & custom agents</sub></td>
 </tr>
 <tr>
 <td align="center">🚀<br/><b>Re-Discovery to New-Discovery</b><br/><sub>50 = match the paper, 70+ = surpass it</sub></td>
-<td align="center">📋<br/><b>Fine-Grained Checklist</b><br/><sub>Per-item keywords, weights & reasoning</sub></td>
+<td align="center">📋<br/><b>Fine-Grained Rubric (Checklist)</b><br/><sub>Per-item keywords, weights & reasoning</sub></td>
 <td align="center">📡<br/><b>Live Streaming UI</b><br/><sub>Watch agents code, plot & write in real-time</sub></td>
 <td align="center">🍃<br/><b>Lightweight Dependencies</b><br/><sub>Pure Flask + vanilla JS, no heavy frameworks</sub></td>
 </tr>
@@ -59,7 +59,7 @@ Most AI benchmarks evaluate what models **know**. We evaluate what agents can **
 
 - **Real science, not toy problems.** 40 tasks sourced from published papers across 10 disciplines, each with curated experimental datasets.
 - **Two-stage pipeline.** Autonomous research first, rigorous evaluation second — just like peer review.
-- **Fine-grained, multimodal scoring.** A weighted checklist with text and image criteria, judged by an LLM acting as a strict peer reviewer.
+- **Fine-grained, multimodal scoring.** A weighted rubric (checklist) with text and image criteria, judged by an LLM acting as a strict peer reviewer.
 - **Agent-agnostic.** Ships with built-in support for Claude Code, Codex CLI, ARIS Codex, OpenClaw, Nanobot, EvoScientist, ResearchClaw, and a lightweight ResearchHarness baseline. Bring your own agent in one line.
 - **From Re-Discovery to New-Discovery.** Scoring above 50 means matching the original paper; above 70 means *surpassing* it. The frontier is wide open.
 
@@ -90,9 +90,9 @@ Every task in ResearchClawBench is built through a rigorous, expert-driven pipel
 ```mermaid
 flowchart TD
     A["📄 High-Quality Paper Collection\n(Target Paper)"] --> B["🧑‍🔬 Human Expert Extraction\n(Core Task Instructions)"]
-    B --> C["📋 Evaluation Checklist\n(Criteria + Keywords + Weights)"]
+    B --> C["📋 Evaluation Rubric (Checklist)\n(Criteria + Keywords + Weights)"]
     B --> D["📂 Data & Related Work Collection\n(Datasets + Reference Papers)"]
-    C --> E["✅ Human Reproduction & Validation\n(Verify checklist is reproducible)"]
+    C --> E["✅ Human Reproduction & Validation\n(Verify rubric (checklist) is reproducible)"]
     D --> E
 
     style A fill:#e0f2fe,stroke:#0284c7,stroke-width:2px
@@ -106,11 +106,11 @@ flowchart TD
 
 2. **Expert Task Extraction** — Human experts read each paper and distill the core research task into structured instructions, identifying the key scientific question, input data, and expected outputs.
 
-3. **Checklist Design** — Experts create a fine-grained evaluation checklist with weighted criteria (text and image items), each with specific technical keywords that a judge must verify.
+3. **Rubric (Checklist) Design** — Experts create a fine-grained evaluation rubric (checklist) with weighted criteria (text and image items), each with specific technical keywords that a judge must verify.
 
 4. **Data & Related Work Collection** — The datasets and related reference materials are curated to form a research workspace for the task.
 
-5. **Human Reproduction & Validation** — Human researchers independently reproduce the paper's results from the provided workspace and instructions, verifying that every checklist item is achievable. This ensures the benchmark is fair and the checklist is grounded in reality.
+5. **Human Reproduction & Validation** — Human researchers independently reproduce the paper's results from the provided workspace and instructions, verifying that every rubric (checklist) item is achievable. This ensures the benchmark is fair and the rubric (checklist) is grounded in reality.
 
 ### ⚙️ How It Works
 
@@ -126,7 +126,7 @@ flowchart LR
 
     subgraph Stage2["Stage 2 &mdash; Evaluation"]
         G --> D["LLM Judge"]
-        E["Target Paper"] --> H["Checklist"]
+        E["Target Paper"] --> H["Rubric (Checklist)"]
         H --> D
         D --> F["Reasoning\n+ Per-Item Scores"]
     end
@@ -154,10 +154,10 @@ No hand-holding. No chain-of-thought hints. The agent works in its own sandboxed
 
 <div align="center">
 <img src="assets/evaluation.png" width="90%" />
-<p><em>Evaluation view — target paper (left), AI report (center), scored checklist (right)</em></p>
+<p><em>Evaluation view — target paper (left), AI report (center), scored rubric (checklist) panel (right)</em></p>
 </div>
 
-Once the agent finishes, its report is evaluated against the **original published paper** using a fine-grained checklist. The judge receives the task instructions, the AI report, and the checklist criteria — then scores each item using a **dual-mode rubric**:
+Once the agent finishes, its report is evaluated against the **original published paper** using a fine-grained rubric (checklist). The judge receives the task instructions, the AI report, and the rubric (checklist) criteria — then scores each item using a **dual-mode rubric**:
 
 ```mermaid
 flowchart TD
@@ -165,7 +165,7 @@ flowchart TD
         I["INSTRUCTIONS.md\n(task background)"]
         R["Agent Report\n(text + figures)"]
         TP["Target Paper"]
-        CL["Checklist"]
+        CL["Rubric (Checklist)"]
     end
 
     TP --> CL
@@ -188,7 +188,7 @@ flowchart TD
     style T fill:#f0fdf4,stroke:#22c55e,stroke-width:2px
 ```
 
-Each checklist item includes:
+Each rubric (checklist) item includes:
 - **Specific criteria** extracted from the paper's key contributions
 - **Technical keywords** the judge must verify (e.g., *"ROC-AUC improvement"*, *"Monte Carlo integration"*)
 - **Weight** reflecting the item's importance
@@ -198,7 +198,7 @@ The judge automatically determines which evaluation mode applies to each item, t
 
 ##### Mode A: Target Optimization (Comparison through quantitative indicators)
 
-For checklist items involving specific numerical results, metrics, or quantitative outcomes:
+For rubric (checklist) items involving specific numerical results, metrics, or quantitative outcomes:
 
 | Score | Meaning |
 |:------|:--------|
@@ -216,7 +216,7 @@ For checklist items involving specific numerical results, metrics, or quantitati
 
 ##### Mode B: Diagnostic Analysis (Comparison through logical evidence)
 
-For checklist items involving theoretical explanations, mechanistic insights, or interpretive analysis:
+For rubric (checklist) items involving theoretical explanations, mechanistic insights, or interpretive analysis:
 
 | Score | Meaning |
 |:------|:--------|
@@ -289,7 +289,7 @@ ResearchClawBench/
 │   │   ├── task_info.json      # Task description + data manifest
 │   │   ├── data/               # Raw experimental datasets
 │   │   ├── related_work/       # Reference papers
-│   │   └── target_study/       # Paper + checklist + images
+│   │   └── target_study/       # Paper + rubric (checklist) + images
 │   ├── Chemistry_000/
 │   └── ...                     # 10 domains x 4 tasks
 └── workspaces/                 # Generated at runtime (gitignored)
@@ -375,7 +375,7 @@ Open **http://localhost:5000** — browse tasks, pick an agent, hit **Start Run*
 
 #### 6. Score
 
-After a run completes, switch to the **Evaluation** tab and click **Score**. The multimodal LLM judge evaluates each checklist item and returns per-item scores with reasoning.
+After a run completes, switch to the **Evaluation** tab and click **Score**. The multimodal LLM judge evaluates each rubric (checklist) item and returns per-item scores with reasoning.
 
 ### 🤖 Supported Agents
 

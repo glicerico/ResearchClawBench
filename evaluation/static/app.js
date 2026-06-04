@@ -719,6 +719,7 @@ async function selectTask(taskId) {
 
   const epoch = ++state._selectEpoch;
   const stale = () => state._selectEpoch !== epoch;
+  invalidateFileRender();
 
   state.currentTaskId = taskId; state.currentRunId = null;
   document.querySelectorAll('.task-item').forEach(el => el.classList.toggle('active', el.dataset.taskId === taskId));
@@ -733,7 +734,9 @@ async function selectTask(taskId) {
   document.getElementById('terminal-body').innerHTML = '<div class="placeholder">Loading...</div>';
   document.getElementById('report-content').innerHTML = '<div class="placeholder">Loading...</div>';
   document.getElementById('task-checklist-preview').innerHTML = '<div class="placeholder">Loading...</div>';
+  document.getElementById('run-history').innerHTML = '<p class="placeholder" style="padding:4px 8px">Loading...</p>';
   document.getElementById('score-total-area').innerHTML = '';
+  setScoreButtonState(false);
   // Reset paper iframe
   const _paperIframe = document.getElementById('paper-iframe');
   if (_paperIframe) {
@@ -770,7 +773,7 @@ async function selectTask(taskId) {
         ${imgHtml}
       </div>`;
     }).join('');
-  } catch (e) { document.getElementById('task-checklist-preview').innerHTML = '<p class="placeholder">No checklist</p>'; }
+  } catch (e) { document.getElementById('task-checklist-preview').innerHTML = '<p class="placeholder">No rubric (checklist)</p>'; }
   if (stale()) return;
 
   const paperIframe = document.getElementById('paper-iframe');
@@ -807,23 +810,19 @@ async function selectTask(taskId) {
       paperIframe.src = `${API}/api/tasks/${taskId}/paper`;
     }
   }
-  await loadRuns(taskId);
+  const runs = await loadRuns(taskId);
   if (stale()) return;
   document.getElementById('terminal-body').innerHTML = '<div class="placeholder">Select a run to see agent output</div>';
   document.getElementById('terminal-status').textContent = 'Agent Output';
   document.getElementById('terminal-status').className = 'terminal-status';
 
   // Auto-select latest run, or show task file structure
-  const runs = STATIC_MODE
-    ? (state._runsIndex || []).filter(r => r.task_id === taskId).sort((a,b) => (b.timestamp||'').localeCompare(a.timestamp||''))
-    : await (await fetch(`${API}/api/runs?task_id=${taskId}`)).json();
-  if (stale()) return;
   const pendingRunId = state._pendingRunId;
-  const selectableRuns = STATIC_MODE ? runs.filter(r => r.details_exported !== false) : runs;
+  const selectableRuns = STATIC_MODE ? (runs || []).filter(r => r.details_exported !== false) : (runs || []);
   const preferredRun = pendingRunId ? selectableRuns.find(r => r.run_id === pendingRunId) : null;
   if (selectableRuns.length > 0) {
     state._pendingRunId = null;
-    await selectRun((preferredRun || selectableRuns[0]).run_id);
+    await selectRun((preferredRun || selectableRuns[0]).run_id, { userInitiated: false });
   } else {
     state._pendingRunId = null;
     state.currentRunId = null;
@@ -846,8 +845,7 @@ async function selectTask(taskId) {
     document.getElementById('score-total-area').innerHTML = '';
     document.querySelectorAll('.checklist-score-slot').forEach(el => el.innerHTML = '');
     document.querySelectorAll('.score-item-reasoning').forEach(el => el.remove());
-    const scoreBtn = document.getElementById('btn-score');
-    if (scoreBtn) scoreBtn.textContent = 'Score';
+    setScoreButtonState(false);
   }
   switchTab(state.lastTab);
 }
@@ -861,25 +859,32 @@ async function loadRuns(taskId) {
   } else {
     runs = await (await fetch(`${API}/api/runs?task_id=${taskId||''}`)).json();
   }
+  if (taskId && state.currentTaskId !== taskId) return null;
   const div = document.getElementById('run-history');
-  if (!runs.length) { div.innerHTML = '<p class="placeholder" style="padding:4px 8px">No runs yet</p>'; return; }
+  if (!runs.length) {
+    div.innerHTML = '<p class="placeholder" style="padding:4px 8px">No runs yet</p>';
+    return runs;
+  }
   div.innerHTML = runs.map(r => {
     const ts = r.timestamp || '';
     const fmt = ts.length >= 15 ? `${ts.slice(0,4)}-${ts.slice(4,6)}-${ts.slice(6,8)} ${ts.slice(9,11)}:${ts.slice(11,13)}` : ts;
+    const agentLabel = r.agent_name || 'Agent';
     const modelLabel = r.model_display || r.model;
     const modelStr = modelLabel ? `<span class="run-item-model">${esc(modelLabel)}</span>` : '';
+    const fullRunLabel = modelLabel ? `${agentLabel} ${modelLabel}` : agentLabel;
     const detailsMarker = STATIC_MODE ? runDetailsMarkerHtml(getRunDetailsState(r), 'run-detail-marker') : '';
     return `
     <div class="run-item ${r.run_id===state.currentRunId?'active':''}" data-run-id="${r.run_id}">
       <span class="status-dot ${r.status}"></span>
       ${detailsMarker}
       <div class="run-item-info" onclick="selectRun('${r.run_id}')">
-        <div class="run-item-task">${agentLogoHtml(r.agent_name, 14)} ${r.agent_name||'Agent'} ${modelStr}</div>
+        <div class="run-item-task" title="${esc(fullRunLabel)}">${agentLogoHtml(agentLabel, 14)} ${esc(agentLabel)} ${modelStr}</div>
         <div class="run-item-time">${fmt}</div>
       </div>
       <button class="run-item-del" onclick="event.stopPropagation();deleteRun('${r.run_id}')" title="Delete run">&times;</button>
     </div>`;
   }).join('');
+  return runs;
 }
 
 async function deleteRun(runId) {
@@ -895,7 +900,11 @@ async function deleteRun(runId) {
   loadDashboard();
 }
 
-async function selectRun(runId) {
+async function selectRun(runId, options = {}) {
+  if (options.userInitiated !== false) {
+    state._selectEpoch++;
+  }
+
   if (STATIC_MODE) {
     if (!state._runsIndex) state._runsIndex = await fetchStaticJSON('data/runs_index.json') || [];
     const indexedRun = state._runsIndex.find(r => r.run_id === runId);
@@ -910,6 +919,7 @@ async function selectRun(runId) {
   stopAutoTrack();
 
   state.currentRunId = runId;
+  invalidateFileRender();
   const fileTrack = document.getElementById('toggle-file-track');
   if (fileTrack) fileTrack.classList.toggle('on', !state.userSelectedFile);
   const stopBtn = document.getElementById('btn-stop-run');
@@ -926,7 +936,7 @@ async function selectRun(runId) {
   document.getElementById('score-total-area').innerHTML = '';
   document.querySelectorAll('.checklist-score-slot').forEach(el => el.innerHTML = '');
   document.querySelectorAll('.score-item-reasoning').forEach(el => el.remove());
-  { const _s = document.getElementById('btn-score'); if (_s) _s.textContent = 'Score'; }
+  setScoreButtonState(false);
 
   const isStale = () => state.currentRunId !== runId;
 
@@ -984,14 +994,8 @@ async function selectRun(runId) {
         while (resolved.includes('../')) resolved = resolved.replace(/[^/]+\/\.\.\//g, '');
         return pre + `data/runs/${runId}/workspace/${resolved}` + post;
       });
-      const reportEl = document.getElementById('report-content');
-      reportEl.innerHTML = html;
-      enhanceRenderedMarkdown(reportEl);
+      renderReportMarkdown(html);
     } else { document.getElementById('report-content').innerHTML = '<div class="placeholder">No report</div>'; }
-    // Score
-    document.getElementById('score-total-area').innerHTML = '';
-    document.querySelectorAll('.checklist-score-slot').forEach(el => el.innerHTML = '');
-    document.querySelectorAll('.score-item-reasoning').forEach(el => el.remove());
     if (runData && runData.score && runData.score.items) renderScore(runData.score);
     switchTab(state.lastTab);
   } else {
@@ -1022,7 +1026,7 @@ async function selectRun(runId) {
       } else {
         autoOpenLatestFile(runId, wsFiles);
       }
-      await Promise.all([loadSavedOutput(runId), loadReport(runId), loadScore(runId)]);
+      await Promise.all([loadSavedOutput(runId), refreshEvaluation(runId)]);
       if (isStale()) return;
       switchTab(state.lastTab);
     }
@@ -1033,6 +1037,7 @@ async function autoOpenLatestFile(runId, files) {
   if (state.userSelectedFile || state.currentRunId !== runId) return;
   try {
     if (!files) files = await (await fetch(`${API}/api/runs/${runId}/output-files`)).json();
+    if (state.userSelectedFile || state.currentRunId !== runId) return;
     let latest = null;
     for (const f of files) {
       if (f.type !== 'file' || !isViewableFile(f.name) || !isAgentOutput(f.path)) continue;
@@ -1067,20 +1072,26 @@ async function loadSavedOutput(runId) {
     }
     state.autoFollow = prevFollow;
     body.scrollTop = body.scrollHeight;
-  } catch (_) { body.innerHTML = '<div class="placeholder">Failed to load output</div>'; }
+  } catch (_) {
+    if (state.currentRunId === runId) body.innerHTML = '<div class="placeholder">Failed to load output</div>';
+  }
 }
 
 /* ── Start Run ───────────────────────────────────────────────────────── */
 async function startRun() {
   if (!state.currentTaskId || !state.selectedAgent) return;
-  const body = { task_id: state.currentTaskId, agent: state.selectedAgent };
+  const taskId = state.currentTaskId;
+  const agent = state.selectedAgent;
+  const body = { task_id: taskId, agent };
   const btn = document.getElementById('btn-start-run');
   btn.disabled = true; btn.innerHTML = '<span class="btn-icon">&#9654;</span> Starting...';
   try {
     const data = await (await fetch(`${API}/api/runs`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })).json();
+    if (state.currentTaskId !== taskId || state.selectedAgent !== agent) return;
+    invalidateFileRender();
     state.currentRunId = data.run_id;
     startDurationTimer();
-    switchTab('research'); startStreaming(data.run_id); await loadRuns(state.currentTaskId);
+    switchTab('research'); startStreaming(data.run_id); await loadRuns(taskId);
   } catch (e) { alert('Failed: ' + e.message); }
   finally { btn.disabled = false; btn.innerHTML = '<span class="btn-icon">&#9654;</span> Start Run'; }
 }
@@ -1099,6 +1110,7 @@ function startStreaming(runId) {
   const es = new EventSource(`${API}/api/runs/${runId}/stream`);
   state.eventSource = es;
   es.onmessage = (e) => {
+    if (state.currentRunId !== runId) { es.close(); return; }
     try {
       const d = JSON.parse(e.data); appendMsg(d);
       if (d.type === 'system' && d.subtype === 'done') {
@@ -1107,10 +1119,15 @@ function startStreaming(runId) {
       }
     } catch (_) { appendLine(e.data, 'msg-text'); }
   };
-  es.onerror = () => { es.close(); state.eventSource = null; stopAutoTrack(); onStreamEnd('disconnected', runId); };
+  es.onerror = () => {
+    es.close();
+    if (state.currentRunId !== runId) return;
+    state.eventSource = null; stopAutoTrack(); onStreamEnd('disconnected', runId);
+  };
 }
 
 function onStreamEnd(status, runId) {
+  if (state.currentRunId !== runId) return;
   const st = document.getElementById('terminal-status');
   st.textContent = 'Agent Output';
   st.className = 'terminal-status completed';
@@ -1122,10 +1139,11 @@ function onStreamEnd(status, runId) {
     if (state.currentRunId !== runId) return;
     loadRuns(state.currentTaskId);
     loadWorkspace(runId);
-    loadReport(runId);
+    refreshEvaluation(runId);
     // Update duration from server (accurate)
     try {
       const meta = await (await fetch(`${API}/api/runs/${runId}/meta`)).json();
+      if (state.currentRunId !== runId) return;
       if (meta.duration_seconds != null) showDuration(meta.duration_seconds);
     } catch (_) {}
   }, 1500);
@@ -1147,6 +1165,7 @@ function startAutoTrack(runId) {
     try {
       // Only fetch output files (lightweight), merge with cached input files for tree
       const outFiles = await (await fetch(`${API}/api/runs/${runId}/output-files`)).json();
+      if (state.currentRunId !== runId) { stopAutoTrack(); return; }
       const allFiles = _sortFlatTree([...(state._cachedInputFiles || []), ...outFiles]);
 
       // Refresh file tree if file count changed
@@ -1520,6 +1539,10 @@ async function loadFile(runId, path, name, evt, isAutoTrack) {
 }
 
 let _renderFileEpoch = 0;
+function invalidateFileRender() {
+  _renderFileEpoch++;
+}
+
 async function renderFileContent(path, name, url, evt, baseUrl, filePath) {
   const myEpoch = ++_renderFileEpoch;
   const staleFile = () => _renderFileEpoch !== myEpoch;
@@ -1668,66 +1691,106 @@ function fileIcon(n) {
 async function loadReport(runId) {
   try {
     const res = await fetch(`${API}/api/runs/${runId}/report`);
-    if (state.currentRunId !== runId) return;
-    if (!res.ok) { document.getElementById('report-content').innerHTML = '<div class="placeholder">No report generated yet</div>'; return; }
+    if (state.currentRunId !== runId) return null;
+    if (!res.ok) {
+      document.getElementById('report-content').innerHTML = '<div class="placeholder">No report generated yet</div>';
+      return false;
+    }
     const data = await res.json();
-    const reportEl = document.getElementById('report-content');
-    reportEl.innerHTML = renderMarkdown(data.markdown || '');
-    enhanceRenderedMarkdown(reportEl);
-  } catch (_) { document.getElementById('report-content').innerHTML = '<div class="placeholder">No report</div>'; }
+    if (state.currentRunId !== runId) return null;
+    const markdown = data.markdown || '';
+    if (!markdown.trim()) {
+      document.getElementById('report-content').innerHTML = '<div class="placeholder">No report generated yet</div>';
+      return false;
+    }
+    renderReportMarkdown(renderMarkdown(markdown));
+    return true;
+  } catch (_) {
+    if (state.currentRunId === runId) document.getElementById('report-content').innerHTML = '<div class="placeholder">No report</div>';
+    return false;
+  }
 }
 
 /* ── Scoring ─────────────────────────────────────────────────────────── */
+function setScoreButtonState(visible, disabled = false, text = 'Score') {
+  const btn = document.getElementById('btn-score');
+  if (!btn) return;
+  btn.style.display = visible ? 'inline-flex' : 'none';
+  btn.disabled = disabled;
+  btn.textContent = text;
+}
+
+async function refreshEvaluation(runId) {
+  setScoreButtonState(false);
+  const [hasReport, hasScore] = await Promise.all([loadReport(runId), loadScore(runId)]);
+  if (state.currentRunId !== runId) return;
+  setScoreButtonState(hasReport === true && hasScore !== true);
+}
+
 async function triggerScoring() {
   if (!state.currentRunId) return;
-  const btn = document.getElementById('btn-score'); btn.disabled = true; btn.textContent = 'Scoring...';
+  const runId = state.currentRunId;
+  setScoreButtonState(true, true, 'Scoring...');
   document.getElementById('score-total-area').innerHTML = '<p class="placeholder">Scoring in progress...</p>';
   try {
-    await fetch(`${API}/api/runs/${state.currentRunId}/score`, { method: 'POST' });
-    const runId = state.currentRunId;
+    await fetch(`${API}/api/runs/${runId}/score`, { method: 'POST' });
+    if (state.currentRunId !== runId) return;
     let pollCount = 0;
     const poll = setInterval(async () => {
+      if (state.currentRunId !== runId) {
+        clearInterval(poll);
+        return;
+      }
       pollCount++;
       if (pollCount > 100) {
         clearInterval(poll);
         document.getElementById('score-total-area').innerHTML = `<p style="color:var(--err)">Scoring timed out</p>`;
-        btn.disabled = false; btn.textContent = 'Score';
+        setScoreButtonState(true);
         return;
       }
       try {
         const res = await fetch(`${API}/api/runs/${runId}/score`);
         if (res.ok) {
           const s = await res.json();
+          if (state.currentRunId !== runId) {
+            clearInterval(poll);
+            return;
+          }
           if (s.items) {
             clearInterval(poll);
             renderScore(s);
-            btn.disabled = false; btn.textContent = 'Re-Score';
+            setScoreButtonState(false);
             loadDashboard(); // Refresh leaderboard
           } else if (s.error) {
             clearInterval(poll);
             document.getElementById('score-total-area').innerHTML = `<p style="color:var(--err)">Scoring failed: ${esc(s.error)}</p>`;
-            btn.disabled = false; btn.textContent = 'Score';
+            setScoreButtonState(true);
           }
         }
       } catch (_) {}
     }, 3000);
   } catch (e) {
     document.getElementById('score-total-area').innerHTML = `<p style="color:var(--err)">Failed: ${esc(e.message)}</p>`;
-    btn.disabled = false; btn.textContent = 'Score';
+    setScoreButtonState(true);
   }
 }
 
 async function loadScore(runId) {
-  // Clear previous scores
-  document.getElementById('score-total-area').innerHTML = '';
-  document.querySelectorAll('.checklist-score-slot').forEach(el => el.innerHTML = '');
-  document.querySelectorAll('.score-item-reasoning').forEach(el => el.remove());
-  { const _s = document.getElementById('btn-score'); if (_s) _s.textContent = 'Score'; }
   try {
     const res = await fetch(`${API}/api/runs/${runId}/score`);
-    if (state.currentRunId !== runId) return;
-    if (res.ok) { const s = await res.json(); if (s.items) { renderScore(s); const _s2 = document.getElementById('btn-score'); if (_s2) _s2.textContent = 'Re-Score'; } }
-  } catch (_) {}
+    if (state.currentRunId !== runId) return null;
+    if (res.ok) {
+      const s = await res.json();
+      if (state.currentRunId !== runId) return null;
+      if (s.items) {
+        renderScore(s);
+        return true;
+      }
+    }
+    return false;
+  } catch (_) {
+    return false;
+  }
 }
 
 function renderScore(s) {
@@ -1778,7 +1841,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `panel-${name}`));
   if (!STATIC_MODE) {
     if (name === 'research' && state.currentRunId) loadWorkspace(state.currentRunId);
-    if (name === 'eval' && state.currentRunId) { loadReport(state.currentRunId); loadScore(state.currentRunId); }
+    if (name === 'eval' && state.currentRunId) refreshEvaluation(state.currentRunId);
   }
 }
 
@@ -1983,6 +2046,13 @@ function renderMarkdown(text) {
     },
   });
   return restoreMathTokens(sanitizeMarkdownHtml(html), protectedText);
+}
+
+function renderReportMarkdown(html) {
+  const reportEl = document.getElementById('report-content');
+  if (!reportEl) return;
+  reportEl.innerHTML = `<div class="file-md-render">${html}</div>`;
+  enhanceRenderedMarkdown(reportEl.querySelector('.file-md-render'));
 }
 
 function isExternalOrInlineImageSrc(src) {
