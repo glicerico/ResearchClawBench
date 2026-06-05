@@ -382,16 +382,31 @@ After a run completes, switch to the **Evaluation** tab and click **Score**. The
 
 For scripted LLM sweeps with ResearchHarness, use `python3 -m evaluation.cli_eval` or the repository-local `python3 rcb-eval` entrypoint. The CLI builds the same standard ResearchClawBench run workspaces used by the Web UI, runs the installed `researchharness` package, scores completed reports, and prints per-run and aggregate summary tables.
 
+The YAML intentionally separates the evaluated model from the judge model:
+
+```yaml
+agent_model:
+  name: gpt-5.4        # model being evaluated
+  api_base_env: AGENT_API_BASE
+  api_key_env: AGENT_API_KEY
+
+judge_model:
+  enabled: true
+  name: gpt-5.1        # model used only for scoring
+  api_base_env: JUDGE_API_BASE
+  api_key_env: JUDGE_API_KEY
+```
+
 ```bash
 pip install -r evaluation/requirements.txt
 
-# Edit model, tasks, repeats, concurrency, and scorer settings first.
+# Edit agent_model, judge_model, tasks, repeats, and concurrency first.
 cp eval_configs/researchharness_example.yaml eval_configs/my_eval.yaml
 
-API_BASE=https://your-api.example/v1 \
-API_KEY=sk-xxx \
-OPENAI_BASE_URL=https://api.openai.com/v1 \
-OPENAI_API_KEY=sk-xxx \
+AGENT_API_BASE=https://your-agent-api.example/v1 \
+AGENT_API_KEY=sk-agent-xxx \
+JUDGE_API_BASE=https://your-judge-api.example/v1 \
+JUDGE_API_KEY=sk-judge-xxx \
 python3 -m evaluation.cli_eval eval_configs/my_eval.yaml
 ```
 

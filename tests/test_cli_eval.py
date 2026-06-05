@@ -49,7 +49,7 @@ def write_config(path: Path, *, repeats: int = 1, concurrency: int = 1) -> None:
     path.write_text(
         f"""
 name: cli_smoke
-model:
+agent_model:
   name: fake-model
   api_base: http://example.invalid/v1
   api_key: fake-key
@@ -58,7 +58,7 @@ tasks:
     repeats: {repeats}
 repeats_per_task: 1
 max_concurrent_runs: {concurrency}
-scorer:
+judge_model:
   enabled: false
 """.strip()
         + "\n",
@@ -91,6 +91,72 @@ class CliEvalSmokeTests(TestCase):
 
             self.assertEqual(code, 0)
             self.assertFalse(workspace_root.exists())
+
+    def test_legacy_model_sections_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            config_path = tmp_path / "eval.yaml"
+            config_path.write_text(
+                """
+name: legacy_config
+model:
+  name: fake-model
+  api_base: http://example.invalid/v1
+  api_key: fake-key
+tasks:
+  - id: Material_002
+scorer:
+  enabled: false
+""".strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with (
+                patch.object(cli_eval, "_load_researchharness", fake_researchharness),
+                redirect_stdout(StringIO()),
+            ):
+                with self.assertRaises(cli_eval.EvalConfigError) as ctx:
+                    cli_eval.run_eval(
+                        config_path,
+                        dry_run=True,
+                        no_score=True,
+                        skip_secret_check=False,
+                    )
+
+            self.assertIn("agent_model", str(ctx.exception))
+
+    def test_agent_api_env_names_are_required_even_when_secret_check_is_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            config_path = tmp_path / "eval.yaml"
+            config_path.write_text(
+                """
+name: missing_env_names
+agent_model:
+  name: fake-model
+tasks:
+  - id: Material_002
+judge_model:
+  enabled: false
+""".strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with (
+                patch.object(cli_eval, "_load_researchharness", fake_researchharness),
+                redirect_stdout(StringIO()),
+            ):
+                with self.assertRaises(cli_eval.EvalConfigError) as ctx:
+                    cli_eval.run_eval(
+                        config_path,
+                        dry_run=True,
+                        no_score=True,
+                        skip_secret_check=True,
+                    )
+
+            self.assertIn("agent_model.api_base", str(ctx.exception))
 
     def test_concurrent_smoke_uses_cli_workspace_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
