@@ -1,0 +1,32 @@
+# Batch evaluation config with different repeat counts per task.
+# Run with AGENT_API_BASE/AGENT_API_KEY and JUDGE_API_BASE/JUDGE_API_KEY set.
+
+name: researchharness_example_mixed_repeats
+
+agent_model:
+  name: gpt-5.4
+  api_base_env: AGENT_API_BASE
+  api_key_env: AGENT_API_KEY
+
+tasks:
+  - id: Earth_000
+    repeats: 1
+  - id: Physics_003
+    repeats: 2
+  - id: Chemistry_002
+    repeats: 3
+
+repeats_per_task: 1
+max_concurrent_runs: 2
+
+researchharness:
+  max_llm_calls: 100
+  max_rounds: 100
+  max_runtime_seconds: 9000
+  max_output_tokens: 10000
+
+judge_model:
+  enabled: true
+  name: gpt-5.1
+  api_base_env: JUDGE_API_BASE
+  api_key_env: JUDGE_API_KEY

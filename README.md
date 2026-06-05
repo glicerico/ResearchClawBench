@@ -401,7 +401,7 @@ judge_model:
 pip install -r evaluation/requirements.txt
 
 # Edit agent_model, judge_model, tasks, repeats, and concurrency first.
-cp eval_configs/researchharness_example.yaml eval_configs/my_eval.yaml
+cp eval_configs/researchharness_example_1_single_task.yaml eval_configs/my_eval.yaml
 
 AGENT_API_BASE=https://your-agent-api.example/v1 \
 AGENT_API_KEY=sk-agent-xxx \
@@ -409,6 +409,12 @@ JUDGE_API_BASE=https://your-judge-api.example/v1 \
 JUDGE_API_KEY=sk-judge-xxx \
 python3 -m evaluation.cli_eval eval_configs/my_eval.yaml
 ```
+
+Provided examples:
+
+- `eval_configs/researchharness_example_1_single_task.yaml`: one task with one repeat.
+- `eval_configs/researchharness_example_2_mixed_repeats.yaml`: multiple tasks with different repeat counts.
+- `eval_configs/researchharness_example_3_all_tasks.yaml`: all official tasks with `tasks: all`.
 
 Useful validation command:
 

@@ -70,6 +70,41 @@ class CliEvalSmokeTests(TestCase):
     def setUp(self):
         cli_eval._ALLOCATED_RUN_IDS.clear()
 
+    def test_public_example_configs_dry_run(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        examples = [
+            "researchharness_example_1_single_task.yaml",
+            "researchharness_example_2_mixed_repeats.yaml",
+            "researchharness_example_3_all_tasks.yaml",
+        ]
+        for example in examples:
+            with self.subTest(example=example):
+                with (
+                    patch.object(cli_eval, "_load_researchharness", fake_researchharness),
+                    redirect_stdout(StringIO()),
+                ):
+                    code = cli_eval.run_eval(
+                        repo_root / "eval_configs" / example,
+                        dry_run=True,
+                        no_score=True,
+                        skip_secret_check=True,
+                    )
+                self.assertEqual(code, 0)
+
+    def test_mixed_repeats_and_all_tasks_are_resolved(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        mixed = cli_eval._load_yaml(repo_root / "eval_configs" / "researchharness_example_2_mixed_repeats.yaml")
+        mixed_plan = cli_eval._resolve_task_plan(mixed, default_repeats=1)
+        self.assertEqual(
+            [(item.task_id, item.repeats) for item in mixed_plan],
+            [("Earth_000", 1), ("Physics_003", 2), ("Chemistry_002", 3)],
+        )
+
+        all_tasks = cli_eval._load_yaml(repo_root / "eval_configs" / "researchharness_example_3_all_tasks.yaml")
+        all_plan = cli_eval._resolve_task_plan(all_tasks, default_repeats=1)
+        self.assertGreaterEqual(len(all_plan), 40)
+        self.assertTrue(all(item.repeats == 1 for item in all_plan))
+
     def test_dry_run_does_not_create_workspace(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

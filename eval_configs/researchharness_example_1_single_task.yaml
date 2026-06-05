@@ -1,0 +1,29 @@
+# Minimal batch evaluation config for the ResearchHarness-backed CLI.
+# Run with AGENT_API_BASE/AGENT_API_KEY set, for example:
+#   python3 -m evaluation.cli_eval eval_configs/researchharness_example_1_single_task.yaml
+
+name: researchharness_example
+
+agent_model:
+  name: gpt-5.4
+  api_base_env: AGENT_API_BASE
+  api_key_env: AGENT_API_KEY
+
+tasks:
+  - id: Physics_003
+    repeats: 1
+
+repeats_per_task: 1
+max_concurrent_runs: 1
+
+researchharness:
+  max_llm_calls: 100
+  max_rounds: 100
+  max_runtime_seconds: 9000
+  max_output_tokens: 10000
+
+judge_model:
+  enabled: true
+  name: gpt-5.1
+  api_base_env: JUDGE_API_BASE
+  api_key_env: JUDGE_API_KEY
