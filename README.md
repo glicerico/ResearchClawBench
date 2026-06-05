@@ -378,7 +378,7 @@ Open **http://localhost:5000** — browse tasks, pick an agent, hit **Start Run*
 
 After a run completes, switch to the **Evaluation** tab and click **Score**. The multimodal LLM judge evaluates each rubric (checklist) item and returns per-item scores with reasoning.
 
-### Batch CLI Evaluation
+#### 7. Batch CLI Evaluation
 
 For scripted LLM sweeps with ResearchHarness, use `python3 -m evaluation.cli_eval` or the repository-local `python3 rcb-eval` entrypoint. The CLI builds the same standard ResearchClawBench run workspaces used by the Web UI, runs the installed `researchharness` package, scores completed reports, and prints per-run and aggregate summary tables.
 
