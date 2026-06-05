@@ -1,0 +1,29 @@
+# Minimal batch evaluation config for the ResearchHarness-backed CLI.
+# Run with API_BASE/API_KEY set, for example:
+#   python3 -m evaluation.cli_eval eval_configs/researchharness_example.yaml
+
+name: researchharness_example
+
+model:
+  name: gpt-5.4
+  api_base_env: API_BASE
+  api_key_env: API_KEY
+
+tasks:
+  - id: Physics_003
+    repeats: 1
+
+repeats_per_task: 1
+max_concurrent_runs: 1
+
+researchharness:
+  max_llm_calls: 100
+  max_rounds: 100
+  max_runtime_seconds: 9000
+  max_output_tokens: 10000
+
+scorer:
+  enabled: true
+  model: gpt-5.1
+  api_base_env: OPENAI_BASE_URL
+  api_key_env: OPENAI_API_KEY

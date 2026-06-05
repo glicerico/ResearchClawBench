@@ -93,6 +93,12 @@ def get_run_workspace(run_id: str) -> Optional[Path]:
     ws = WORKSPACES_DIR / run_id
     if ws.is_dir():
         return ws
+    if "/" not in run_id and "\\" not in run_id:
+        cli_root = WORKSPACES_DIR / "cli_runs"
+        if cli_root.is_dir():
+            for cli_ws in cli_root.glob(f"*/{run_id}"):
+                if cli_ws.is_dir():
+                    return cli_ws
     return None
 
 

@@ -65,6 +65,7 @@ Most AI benchmarks evaluate what models **know**. We evaluate what agents can **
 
 ### 📢 News
 
+- **2026-06-05** 🧪 Added `rcb-eval`, a YAML-configured command-line evaluation workflow powered by ResearchHarness, supporting concurrent runs, repeated trials, automatic scoring, and Markdown evaluation reports with per-run and per-task statistics.
 - **2026-06-03** 🧬 Added leaderboard results for [EvoScientist](https://github.com/EvoScientist/EvoScientist) v0.1.1 while retaining EvoScientist v0.0.4 as a separate versioned baseline. Results are available on the [Leaderboard](https://internscience.github.io/ResearchClawBench-Home/).
 - **2026-06-02** 📊 Evaluated Claude-Opus-4.8 as an additional standalone LLM with [ResearchHarness](https://huggingface.co/spaces/InternScience/ResearchHarness). Results are available on the [Leaderboard](https://internscience.github.io/ResearchClawBench-Home/).
 - **2026-05-28** 📊 Evaluated two additional standalone LLMs with [ResearchHarness](https://huggingface.co/spaces/InternScience/ResearchHarness): Gemini-3.5-Flash and Qwen3.7-Max. Results are available on the [Leaderboard](https://internscience.github.io/ResearchClawBench-Home/).
@@ -363,7 +364,7 @@ Install whichever agent(s) you plan to benchmark. You do not need every built-in
 | **Nanobot** | [HKUDS/nanobot](https://github.com/HKUDS/nanobot) | Official GitHub repository |
 | **EvoScientist** | [EvoScientist/EvoScientist](https://github.com/EvoScientist/EvoScientist) | Official GitHub repository |
 | **ResearchClaw** | [ymx10086/ResearchClaw](https://github.com/ymx10086/ResearchClaw) | `pip install researchclaw` |
-| **ResearchHarness** | [InternScience/ResearchHarness](https://github.com/InternScience/ResearchHarness) | Lightweight baseline harness for testing different LLMs; replace `/abs/path/to/ResearchHarness` in `agents.json` |
+| **ResearchHarness** | [InternScience/ResearchHarness](https://github.com/InternScience/ResearchHarness) | Lightweight baseline harness for testing different LLMs; install with `pip install researchharness`. The Web UI preset still uses a local checkout path in `agents.json`. |
 
 #### 5. Launch
 
@@ -376,6 +377,31 @@ Open **http://localhost:5000** — browse tasks, pick an agent, hit **Start Run*
 #### 6. Score
 
 After a run completes, switch to the **Evaluation** tab and click **Score**. The multimodal LLM judge evaluates each rubric (checklist) item and returns per-item scores with reasoning.
+
+### Batch CLI Evaluation
+
+For scripted LLM sweeps with ResearchHarness, use `python3 -m evaluation.cli_eval` or the repository-local `python3 rcb-eval` entrypoint. The CLI builds the same standard ResearchClawBench run workspaces used by the Web UI, runs the installed `researchharness` package, scores completed reports, and prints per-run and aggregate summary tables.
+
+```bash
+pip install -r evaluation/requirements.txt
+
+# Edit model, tasks, repeats, concurrency, and scorer settings first.
+cp eval_configs/researchharness_example.yaml eval_configs/my_eval.yaml
+
+API_BASE=https://your-api.example/v1 \
+API_KEY=sk-xxx \
+OPENAI_BASE_URL=https://api.openai.com/v1 \
+OPENAI_API_KEY=sk-xxx \
+python3 -m evaluation.cli_eval eval_configs/my_eval.yaml
+```
+
+Useful validation command:
+
+```bash
+python3 -m evaluation.cli_eval eval_configs/my_eval.yaml --dry-run --skip-secret-check --no-score
+```
+
+Each CLI batch is written under `workspaces/cli_runs/cli_<timestamp>_<random>/`, with individual runs stored as `cli_<task_id>_<timestamp>_<random>/` subdirectories. The batch directory also contains `eval_report_<batch_id>.md`, which records the config metadata, run directories, trace directories, per-run results, per-task summary, and overall statistics. Each run keeps the standard contents: `_meta.json`, `_agent_output.jsonl`, `report/report.md`, and `_score.json` when scoring is enabled. ResearchHarness events are captured in `_agent_output.jsonl` and also saved as sibling trace directories named `<run_id>_trace/` in the same batch directory. The role prompt is loaded from the installed `researchharness` package, so this CLI does not require a separate ResearchHarness checkout. The shorter `python3 rcb-eval eval_configs/my_eval.yaml` entrypoint is also provided.
 
 ### 🤖 Supported Agents
 

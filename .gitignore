@@ -135,7 +135,14 @@ celerybeat.pid
 *.sage.py
 
 # Workspaces (evaluation runs)
-workspaces/
+workspaces/*
+!workspaces/.gitkeep
+!workspaces/cli_runs/
+workspaces/cli_runs/*
+!workspaces/cli_runs/.gitkeep
+
+# Local private eval configs
+eval_configs/*.local.yaml
 
 # Environments
 .env
