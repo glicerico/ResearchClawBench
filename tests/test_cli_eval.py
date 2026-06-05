@@ -193,6 +193,43 @@ judge_model:
 
             self.assertIn("agent_model.api_base", str(ctx.exception))
 
+    def test_removed_max_llm_calls_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            config_path = tmp_path / "eval.yaml"
+            config_path.write_text(
+                """
+name: removed_max_llm_calls
+agent_model:
+  name: fake-model
+  api_base: http://example.invalid/v1
+  api_key: fake-key
+tasks:
+  - id: Material_002
+researchharness:
+  max_llm_calls: 100
+  max_rounds: 500
+judge_model:
+  enabled: false
+""".strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with (
+                patch.object(cli_eval, "_load_researchharness", fake_researchharness),
+                redirect_stdout(StringIO()),
+            ):
+                with self.assertRaises(cli_eval.EvalConfigError) as ctx:
+                    cli_eval.run_eval(
+                        config_path,
+                        dry_run=True,
+                        no_score=True,
+                        skip_secret_check=False,
+                    )
+
+            self.assertIn("max_llm_calls", str(ctx.exception))
+
     def test_concurrent_smoke_uses_cli_workspace_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

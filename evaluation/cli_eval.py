@@ -304,6 +304,12 @@ def _resolve_task_plan(config: dict[str, Any], default_repeats: int) -> list[Tas
     return task_plan
 
 
+def _validate_researchharness_config(config: dict[str, Any]) -> None:
+    rh = _section(config, "researchharness", {})
+    if "max_llm_calls" in rh:
+        raise EvalConfigError("researchharness.max_llm_calls is no longer supported; use researchharness.max_rounds.")
+
+
 def _load_researchharness():
     try:
         from agent_base.react_agent import default_llm_config
@@ -415,7 +421,6 @@ def _run_one(
             llm=llm,
             role_prompt=role_prompt,
             trace_dir=str(trace_dir),
-            max_llm_calls=_as_optional_int(rh.get("max_llm_calls"), "researchharness.max_llm_calls"),
             max_rounds=_as_optional_int(rh.get("max_rounds"), "researchharness.max_rounds"),
             max_runtime_seconds=_as_optional_int(rh.get("max_runtime_seconds"), "researchharness.max_runtime_seconds"),
         )
@@ -720,6 +725,7 @@ def _print_dry_run(task_plan: list[TaskPlanItem], max_workers: int, model: Model
 
 def run_eval(config_path: Path, *, dry_run: bool, no_score: bool, skip_secret_check: bool) -> int:
     config = _load_yaml(config_path)
+    _validate_researchharness_config(config)
     repeats = _as_positive_int(config.get("repeats_per_task"), "repeats_per_task", 1)
     task_plan = _resolve_task_plan(config, repeats)
     max_workers = _as_positive_int(config.get("max_concurrent_runs"), "max_concurrent_runs", 1)
