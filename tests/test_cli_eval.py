@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -70,6 +71,8 @@ judge_model:
 class CliEvalSmokeTests(TestCase):
     def setUp(self):
         cli_eval._ALLOCATED_RUN_IDS.clear()
+        with cli_eval._ACTIVE_RUNS_LOCK:
+            cli_eval._ACTIVE_RUNS.clear()
 
     def test_public_example_configs_dry_run(self):
         repo_root = Path(__file__).resolve().parents[1]
@@ -340,3 +343,42 @@ judge_model:
             self.assertIn("Per-task summary:", output_text)
             self.assertIn("Overall summary:", output_text)
             self.assertIn(f"Evaluation report: {report_files[0]}", output_text)
+
+    def test_active_runs_are_marked_failed_on_interrupt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            runner = cli_eval.TaskRunner(
+                "Material_002",
+                agent_cmd="ResearchHarness Python API",
+                agent_name="ResearchHarness (fake-model)",
+            )
+            runner.run_id = "cli_Material_002_20260606_000000_deadbeef"
+            runner.workspace = tmp_path / runner.run_id
+            runner.meta_path = runner.workspace / "_meta.json"
+            runner.output_path = runner.workspace / "_agent_output.jsonl"
+            runner.instructions_path = runner.workspace / "INSTRUCTIONS.md"
+            runner.workspace.mkdir(parents=True)
+            runner._write_meta("running")
+
+            reason = "CLI evaluation interrupted by SIGTERM."
+            cli_eval._register_active_run(
+                runner,
+                start_time=time.time() - 5,
+                model_name="fake-model",
+                config_name="interrupt_smoke",
+                repeat_index=1,
+            )
+            cli_eval._mark_active_runs_interrupted(reason, 143)
+
+            meta = json.loads(runner.meta_path.read_text(encoding="utf-8"))
+            self.assertEqual(meta["status"], "failed")
+            self.assertEqual(meta["exit_code"], 143)
+            self.assertEqual(meta["termination"], "interrupted")
+            self.assertEqual(meta["error"], reason)
+            self.assertEqual(meta["model"], "fake-model")
+            self.assertEqual(meta["evaluation_config"], "interrupt_smoke")
+            self.assertEqual(meta["repeat_index"], 1)
+            self.assertGreaterEqual(meta["duration_seconds"], 0)
+            self.assertIn(reason, runner.output_path.read_text(encoding="utf-8"))
+            with cli_eval._ACTIVE_RUNS_LOCK:
+                self.assertEqual(cli_eval._ACTIVE_RUNS, {})

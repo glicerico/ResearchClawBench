@@ -12,6 +12,7 @@ import importlib.util
 import json
 import os
 import secrets
+import signal
 import statistics
 import sys
 import threading
@@ -80,8 +81,19 @@ class BatchContext:
     max_workers: int
 
 
+@dataclass(frozen=True)
+class ActiveRun:
+    runner: TaskRunner
+    start_time: float
+    model_name: str
+    config_name: str
+    repeat_index: int
+
+
 _RUN_ALLOCATION_LOCK = threading.Lock()
 _ALLOCATED_RUN_IDS: set[str] = set()
+_ACTIVE_RUNS_LOCK = threading.Lock()
+_ACTIVE_RUNS: dict[str, ActiveRun] = {}
 CLI_WORKSPACE_GROUP = "cli_runs"
 CLI_RUN_PREFIX = "cli"
 EVAL_REPORT_PREFIX = "eval_report"
@@ -390,6 +402,88 @@ def _make_unique_runner(task_id: str, repeat_index: int, agent_name: str, batch_
     raise RuntimeError(f"Failed to allocate a unique workspace for {task_id} repeat {repeat_index}.")
 
 
+def _register_active_run(
+    runner: TaskRunner,
+    *,
+    start_time: float,
+    model_name: str,
+    config_name: str,
+    repeat_index: int,
+) -> None:
+    with _ACTIVE_RUNS_LOCK:
+        _ACTIVE_RUNS[runner.run_id] = ActiveRun(
+            runner=runner,
+            start_time=start_time,
+            model_name=model_name,
+            config_name=config_name,
+            repeat_index=repeat_index,
+        )
+
+
+def _unregister_active_run(run_id: str) -> None:
+    with _ACTIVE_RUNS_LOCK:
+        _ACTIVE_RUNS.pop(run_id, None)
+
+
+def _append_interruption_event(runner: TaskRunner, reason: str) -> None:
+    try:
+        runner.output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(runner.output_path, "a", encoding="utf-8") as output_f:
+            output_f.write(json.dumps({"type": "error", "error": reason}, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _mark_active_runs_interrupted(reason: str, exit_code: int) -> None:
+    with _ACTIVE_RUNS_LOCK:
+        active_runs = list(_ACTIVE_RUNS.values())
+        _ACTIVE_RUNS.clear()
+    for active in active_runs:
+        runner = active.runner
+        if not runner.workspace.exists():
+            continue
+        duration = round(time.time() - active.start_time)
+        _append_interruption_event(runner, reason)
+        try:
+            _write_meta(
+                runner,
+                "failed",
+                {
+                    "exit_code": exit_code,
+                    "model": active.model_name,
+                    "duration_seconds": duration,
+                    "termination": "interrupted",
+                    "error": reason,
+                    "evaluation_config": active.config_name,
+                    "repeat_index": active.repeat_index,
+                },
+            )
+        except Exception:
+            pass
+
+
+def _install_interrupt_handlers() -> dict[int, Any]:
+    previous_handlers: dict[int, Any] = {}
+
+    def handle_signal(signum: int, _frame: Any) -> None:
+        signal_name = signal.Signals(signum).name
+        reason = f"CLI evaluation interrupted by {signal_name}."
+        exit_code = 128 + signum
+        print(f"\n{reason} Marking active runs as failed and exiting.", file=sys.stderr, flush=True)
+        _mark_active_runs_interrupted(reason, exit_code)
+        os._exit(exit_code)
+
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        previous_handlers[signum] = signal.getsignal(signum)
+        signal.signal(signum, handle_signal)
+    return previous_handlers
+
+
+def _restore_interrupt_handlers(previous_handlers: dict[int, Any]) -> None:
+    for signum, previous in previous_handlers.items():
+        signal.signal(signum, previous)
+
+
 def _write_meta(runner: TaskRunner, status: str, extra: dict[str, Any]) -> None:
     runner._write_meta(status, extra)
 
@@ -431,8 +525,17 @@ def _run_one(
     session: dict[str, Any] = {}
     score_error = ""
     score_value: float | None = None
+    registered_active = False
     try:
         runner.setup_workspace()
+        _register_active_run(
+            runner,
+            start_time=start,
+            model_name=model.name,
+            config_name=config_name,
+            repeat_index=spec.repeat_index,
+        )
+        registered_active = True
         trace_dir = batch_dir / f"{runner.run_id}_trace"
         llm = _build_llm_config(default_llm_config, config, model)
         agent = ResearchClawBenchAgent(
@@ -535,6 +638,9 @@ def _run_one(
             "trace_path": session.get("trace_path", "") if session else "",
             "score_error": error,
         }
+    finally:
+        if registered_active:
+            _unregister_active_run(runner.run_id)
 
 
 def _mean(values: list[float]) -> float | None:
@@ -777,29 +883,33 @@ def run_eval(config_path: Path, *, dry_run: bool, no_score: bool, skip_secret_ch
     print(f"Starting {len(specs)} runs with max_concurrent_runs={max_workers}")
     print(f"Batch: {batch.batch_dir}")
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [
-            executor.submit(
-                _run_one,
-                spec,
-                config=config,
-                config_name=config_name,
-                model=model,
-                scorer=scorer,
-                batch_dir=batch.batch_dir,
-                role_prompt=role_prompt,
-                ResearchClawBenchAgent=ResearchClawBenchAgent,
-                default_llm_config=default_llm_config,
-            )
-            for spec in specs
-        ]
-        for future in as_completed(futures):
-            row = future.result()
-            rows.append(row)
-            print(
-                f"[{len(rows)}/{len(specs)}] {row['task_id']} repeat={row['repeat']} "
-                f"status={row['status']} score={_format_value(row.get('score'))} run_id={row['run_id']}"
-            )
+    previous_handlers = _install_interrupt_handlers()
+    try:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(
+                    _run_one,
+                    spec,
+                    config=config,
+                    config_name=config_name,
+                    model=model,
+                    scorer=scorer,
+                    batch_dir=batch.batch_dir,
+                    role_prompt=role_prompt,
+                    ResearchClawBenchAgent=ResearchClawBenchAgent,
+                    default_llm_config=default_llm_config,
+                )
+                for spec in specs
+            ]
+            for future in as_completed(futures):
+                row = future.result()
+                rows.append(row)
+                print(
+                    f"[{len(rows)}/{len(specs)}] {row['task_id']} repeat={row['repeat']} "
+                    f"status={row['status']} score={_format_value(row.get('score'))} run_id={row['run_id']}"
+                )
+    finally:
+        _restore_interrupt_handlers(previous_handlers)
 
     rows.sort(key=lambda row: (row["task_id"], int(row["repeat"])))
     task_summary, overall = _summarize(rows)
