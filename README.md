@@ -397,6 +397,10 @@ judge_model:
   api_key_env: JUDGE_API_KEY
 ```
 
+Real ResearchHarness batch runs also require tool credentials inherited by the installed `researchharness` package: `SERPER_KEY` for web/scholar search, `JINA_KEY` for web fetch, and `MINERU_TOKEN` for PDF reading. These can be placed in `evaluation/.env`; the CLI checks that they exist before creating any batch workspace and runs a lightweight tool preflight before each run. Runs with failed tool preflight are marked as skipped and summarized in `eval_report_<batch_id>.md`.
+
+Provider-specific OpenAI-compatible request options can be passed through `agent_model.extra_body`. For example, Qwen thinking mode can be toggled with `enable_thinking`; when thinking is enabled, keep `researchharness.max_output_tokens` high enough for the model to produce a final answer after thinking.
+
 ```bash
 pip install -r evaluation/requirements.txt
 
@@ -409,6 +413,9 @@ AGENT_API_KEY=sk-agent-xxx \
 JUDGE_MODEL_NAME=gpt-5.1 \
 JUDGE_API_BASE=https://your-judge-api.example/v1 \
 JUDGE_API_KEY=sk-judge-xxx \
+SERPER_KEY=serper-xxx \
+JINA_KEY=jina-xxx \
+MINERU_TOKEN=mineru-xxx \
 python3 -m evaluation.cli_eval eval_configs/my_eval.yaml
 ```
 
@@ -417,6 +424,7 @@ Provided examples:
 - `eval_configs/researchharness_example_1_single_task.yaml`: one task with one repeat.
 - `eval_configs/researchharness_example_2_mixed_repeats.yaml`: multiple tasks with different repeat counts.
 - `eval_configs/researchharness_example_3_all_tasks.yaml`: all official tasks with `tasks: all`.
+- `eval_configs/researchharness_example_4_qwen_thinking.yaml`: Qwen example with `agent_model.extra_body.enable_thinking`.
 
 Useful validation command:
 

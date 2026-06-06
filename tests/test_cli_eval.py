@@ -34,13 +34,16 @@ class FakeResearchClawBenchAgent:
         return {"termination": "result", "trace_path": trace_path_text, "session_state_path": ""}
 
 
-def fake_default_llm_config(model_name: str | None = None) -> dict:
-    return {
+def fake_default_llm_config(model_name: str | None = None, extra_body: dict | None = None) -> dict:
+    config = {
         "model": model_name or "fake-model",
         "api_base": "",
         "api_key": "",
         "generate_cfg": {},
     }
+    if extra_body:
+        config["extra_body"] = dict(extra_body)
+    return config
 
 
 def fake_researchharness():
@@ -80,6 +83,7 @@ class CliEvalSmokeTests(TestCase):
             "researchharness_example_1_single_task.yaml",
             "researchharness_example_2_mixed_repeats.yaml",
             "researchharness_example_3_all_tasks.yaml",
+            "researchharness_example_4_qwen_thinking.yaml",
         ]
         for example in examples:
             with self.subTest(example=example):
@@ -240,6 +244,7 @@ judge_model:
                 "name_env": "AGENT_MODEL_NAME",
                 "api_base": "http://example.invalid/agent",
                 "api_key": "agent-key",
+                "extra_body": {"enable_thinking": False},
             },
             "judge_model": {
                 "enabled": True,
@@ -254,6 +259,9 @@ judge_model:
 
         self.assertEqual(model.name, "agent-test")
         self.assertEqual(model.name_source, "AGENT_MODEL_NAME")
+        self.assertEqual(model.extra_body, {"enable_thinking": False})
+        llm = cli_eval._build_llm_config(fake_default_llm_config, {"researchharness": {}}, model)
+        self.assertEqual(llm["extra_body"], {"enable_thinking": False})
         self.assertEqual(scorer.model, "judge-test")
         self.assertEqual(scorer.model_source, "JUDGE_MODEL_NAME")
 
@@ -271,6 +279,80 @@ judge_model:
 
         self.assertIn("MISSING_AGENT_MODEL_NAME", str(ctx.exception))
 
+    def test_real_run_requires_researchharness_tool_env_before_batch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            config_path = tmp_path / "eval.yaml"
+            workspace_root = tmp_path / "workspaces"
+            write_config(config_path)
+
+            with (
+                patch.dict(os.environ, {}, clear=True),
+                patch.object(cli_eval, "WORKSPACES_DIR", workspace_root),
+                patch.object(cli_eval, "_load_researchharness", fake_researchharness),
+                redirect_stdout(StringIO()),
+            ):
+                with self.assertRaises(cli_eval.EvalConfigError) as ctx:
+                    cli_eval.run_eval(
+                        config_path,
+                        dry_run=False,
+                        no_score=True,
+                        skip_secret_check=False,
+                    )
+
+            self.assertIn("SERPER_KEY", str(ctx.exception))
+            self.assertIn("JINA_KEY", str(ctx.exception))
+            self.assertIn("MINERU_TOKEN", str(ctx.exception))
+            self.assertFalse(workspace_root.exists())
+
+    def test_real_run_skips_when_researchharness_tool_preflight_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            config_path = tmp_path / "eval.yaml"
+            workspace_root = tmp_path / "workspaces"
+            write_config(config_path)
+
+            with (
+                patch.dict(
+                    os.environ,
+                    {"SERPER_KEY": "serper", "JINA_KEY": "jina", "MINERU_TOKEN": "mineru"},
+                ),
+                patch.object(cli_eval, "WORKSPACES_DIR", workspace_root),
+                patch.object(cli_eval, "_load_researchharness", fake_researchharness),
+                patch.object(
+                    cli_eval,
+                    "_run_researchharness_tool_preflight",
+                    return_value=(
+                        False,
+                        [{"name": "JINA_KEY/WebFetch", "status": "FAIL", "detail": "Jina balance is insufficient."}],
+                        "ResearchHarness tool preflight failed: JINA_KEY/WebFetch: Jina balance is insufficient.",
+                    ),
+                ),
+                redirect_stdout(StringIO()),
+            ):
+                code = cli_eval.run_eval(
+                    config_path,
+                    dry_run=False,
+                    no_score=True,
+                    skip_secret_check=False,
+                )
+
+            self.assertEqual(code, 1)
+            batch_dir = next((workspace_root / "cli_runs").iterdir())
+            run_dir = next(path for path in batch_dir.iterdir() if path.is_dir() and not path.name.endswith("_trace"))
+            meta = json.loads((run_dir / "_meta.json").read_text(encoding="utf-8"))
+            self.assertEqual(meta["status"], "skipped")
+            self.assertEqual(meta["termination"], "tool_preflight_failed")
+            self.assertIn("JINA_KEY", meta["skip_reason"])
+            self.assertFalse((run_dir / "data").exists())
+            self.assertFalse((run_dir / "related_work").exists())
+            report_text = next(batch_dir.glob("eval_report_*.md")).read_text(encoding="utf-8")
+            self.assertIn("## Tool Preflight Issues", report_text)
+            self.assertIn("failed_tools", report_text)
+            self.assertIn("failure_details", report_text)
+            self.assertIn("JINA_KEY/WebFetch", report_text)
+            self.assertIn("Jina balance is insufficient", report_text)
+
     def test_concurrent_smoke_uses_cli_workspace_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -281,8 +363,17 @@ judge_model:
             stdout = StringIO()
 
             with (
+                patch.dict(
+                    os.environ,
+                    {"SERPER_KEY": "serper", "JINA_KEY": "jina", "MINERU_TOKEN": "mineru"},
+                ),
                 patch.object(cli_eval, "WORKSPACES_DIR", workspace_root),
                 patch.object(cli_eval, "_load_researchharness", fake_researchharness),
+                patch.object(
+                    cli_eval,
+                    "_run_researchharness_tool_preflight",
+                    return_value=(True, [{"name": "all", "status": "PASS", "detail": "ok"}], ""),
+                ),
                 redirect_stdout(stdout),
             ):
                 code = cli_eval.run_eval(
@@ -328,6 +419,7 @@ judge_model:
 
             report_text = report_files[0].read_text(encoding="utf-8")
             self.assertIn(f"Batch ID: `{batch_dir.name}`", report_text)
+            self.assertIn("Agent model extra_body: `{}`", report_text)
             self.assertIn("## Run Directories", report_text)
             for run_dir in run_dirs:
                 self.assertIn(run_dir.name, report_text)
@@ -340,7 +432,7 @@ judge_model:
             self.assertIn("| wall_clock_seconds |", report_text)
             self.assertIn("| mean_run_duration_seconds |", report_text)
             self.assertIn("| task_id | repeat | run_id | status | score |", report_text)
-            self.assertIn("| task_id | runs | scored_runs | mean |", report_text)
+            self.assertIn("| task_id | runs | completed_runs | skipped_runs | scored_runs | mean |", report_text)
             self.assertIn("mean_duration_seconds", report_text)
             self.assertNotIn("```text", report_text)
             self.assertNotIn("```json", report_text)

@@ -8,16 +8,19 @@ installed ``researchharness`` package is used only as the agent runtime.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import importlib.util
 import json
 import os
 import secrets
+import shutil
 import signal
 import statistics
 import sys
 import threading
 import time
 import traceback
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +44,7 @@ class ModelConfig:
     name: str
     api_base: str
     api_key: str
+    extra_body: dict[str, Any]
     name_source: str
     api_key_source: str
     api_base_source: str
@@ -97,6 +101,8 @@ _ACTIVE_RUNS: dict[str, ActiveRun] = {}
 CLI_WORKSPACE_GROUP = "cli_runs"
 CLI_RUN_PREFIX = "cli"
 EVAL_REPORT_PREFIX = "eval_report"
+RESEARCHHARNESS_TOOL_ENV_VARS = ("SERPER_KEY", "JINA_KEY", "MINERU_TOKEN")
+PROXY_ENV_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 
 
 def _cli_workspaces_dir() -> Path:
@@ -187,6 +193,14 @@ def _as_required_bool(value: Any, name: str) -> bool:
     return value
 
 
+def _as_optional_mapping(value: Any, name: str) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise EvalConfigError(f"{name} must be a mapping.")
+    return dict(value)
+
+
 def _section(config: dict[str, Any], name: str, default: dict[str, Any] | None = None) -> dict[str, Any]:
     if name not in config:
         if default is None:
@@ -247,10 +261,12 @@ def _load_model_config(config: dict[str, Any], *, require_secrets: bool) -> Mode
         label="agent_model.api_key",
         required=require_secrets,
     )
+    extra_body = _as_optional_mapping(model.get("extra_body"), "agent_model.extra_body")
     return ModelConfig(
         name=name,
         api_base=api_base,
         api_key=api_key,
+        extra_body=extra_body,
         name_source=name_source,
         api_key_source=api_key_source,
         api_base_source=api_base_source,
@@ -360,7 +376,7 @@ def _load_researchharness():
 
 def _build_llm_config(default_llm_config, config: dict[str, Any], model: ModelConfig) -> dict[str, Any]:
     rh = _section(config, "researchharness", {})
-    llm = default_llm_config(model_name=model.name)
+    llm = default_llm_config(model_name=model.name, extra_body=model.extra_body or None)
     llm["api_base"] = model.api_base
     llm["api_key"] = model.api_key
     timeout = _as_optional_float(rh.get("timeout_seconds"), "researchharness.timeout_seconds")
@@ -381,6 +397,122 @@ def _build_llm_config(default_llm_config, config: dict[str, Any], model: ModelCo
             generate_cfg[key] = value
     llm["generate_cfg"] = generate_cfg
     return llm
+
+
+def _preview_text(value: Any, limit: int = 500) -> str:
+    text = " ".join(str(value).split())
+    return text[:limit] + ("...(truncated)" if len(text) > limit else "")
+
+
+@contextmanager
+def _without_proxy_env():
+    old_values = {name: os.environ.get(name) for name in (*PROXY_ENV_VARS, "NO_PROXY", "no_proxy")}
+    try:
+        for name in PROXY_ENV_VARS:
+            os.environ.pop(name, None)
+        os.environ["NO_PROXY"] = "*"
+        os.environ["no_proxy"] = "*"
+        yield
+    finally:
+        for name, value in old_values.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
+def _tool_check_result(name: str, status: str, started_at: float, detail: str, output: Any = "") -> dict[str, Any]:
+    return {
+        "name": name,
+        "status": status,
+        "duration_seconds": round(time.time() - started_at, 4),
+        "detail": detail,
+        "output_preview": _preview_text(output),
+    }
+
+
+def _check_serper_tool() -> dict[str, Any]:
+    started_at = time.time()
+    if not os.environ.get("SERPER_KEY", "").strip():
+        return _tool_check_result("SERPER_KEY/WebSearch", "FAIL", started_at, "SERPER_KEY is not set.")
+    try:
+        from agent_base.tools.tool_web import WebSearch
+
+        result = WebSearch().call({"query": "OpenAI"})
+    except Exception as exc:
+        return _tool_check_result("SERPER_KEY/WebSearch", "FAIL", started_at, f"{type(exc).__name__}: {exc}")
+    text = str(result)
+    if "## Web Results" not in text or "SERPER_KEY is not set" in text or "Request failed" in text:
+        return _tool_check_result("SERPER_KEY/WebSearch", "FAIL", started_at, "WebSearch returned an unusable response.", text)
+    return _tool_check_result("SERPER_KEY/WebSearch", "PASS", started_at, "WebSearch returned web results.", text)
+
+
+def _check_jina_tool() -> dict[str, Any]:
+    started_at = time.time()
+    if not os.environ.get("JINA_KEY", "").strip():
+        return _tool_check_result("JINA_KEY/WebFetch", "FAIL", started_at, "JINA_KEY is not set.")
+    try:
+        from agent_base.tools.tool_web import WebFetch
+
+        result = WebFetch().call({"url": "https://en.wikipedia.org/wiki/Attention_Is_All_You_Need", "max_chars": 1200})
+    except Exception as exc:
+        return _tool_check_result("JINA_KEY/WebFetch", "FAIL", started_at, f"{type(exc).__name__}: {exc}")
+    text = str(result)
+    bad_markers = (
+        "JINA_KEY is not set",
+        "[WebFetch] Failed to read page",
+        "provided webpage content could not be accessed",
+        "InsufficientBalanceError",
+    )
+    if "source_type: web" not in text or "content:" not in text or any(marker in text for marker in bad_markers):
+        return _tool_check_result("JINA_KEY/WebFetch", "FAIL", started_at, "WebFetch returned an unusable response.", text)
+    return _tool_check_result("JINA_KEY/WebFetch", "PASS", started_at, "WebFetch returned webpage content.", text)
+
+
+def _check_mineru_tool() -> dict[str, Any]:
+    started_at = time.time()
+    if not os.environ.get("MINERU_TOKEN", "").strip():
+        return _tool_check_result("MINERU_TOKEN/ReadPDF", "FAIL", started_at, "MINERU_TOKEN is not set.")
+    source_pdf = TASKS_DIR / "Math_001" / "target_study" / "paper.pdf"
+    if not source_pdf.exists():
+        return _tool_check_result("MINERU_TOKEN/ReadPDF", "FAIL", started_at, f"Smoke PDF is missing: {source_pdf}")
+    try:
+        from agent_base.tools.tool_file import ReadPDF
+
+        with tempfile.TemporaryDirectory(prefix="rcb_rh_pdf_check_") as tmp:
+            tmp_path = Path(tmp)
+            pdf_path = tmp_path / "paper.pdf"
+            shutil.copyfile(source_pdf, pdf_path)
+            result = ReadPDF().call({"path": "paper.pdf", "max_chars": 1200, "max_image_paths": 1}, workspace_root=tmp_path)
+    except Exception as exc:
+        return _tool_check_result("MINERU_TOKEN/ReadPDF", "FAIL", started_at, f"{type(exc).__name__}: {exc}")
+    text = str(result)
+    bad_markers = (
+        "MINERU_TOKEN",
+        "Missing required dependency",
+        "[ReadPDF] Error",
+        "File not found",
+    )
+    if "source_type: pdf" not in text or any(marker in text for marker in bad_markers):
+        return _tool_check_result("MINERU_TOKEN/ReadPDF", "FAIL", started_at, "ReadPDF returned an unusable response.", text)
+    return _tool_check_result("MINERU_TOKEN/ReadPDF", "PASS", started_at, "ReadPDF returned PDF content.", text)
+
+
+def _run_researchharness_tool_preflight() -> tuple[bool, list[dict[str, Any]], str]:
+    with _without_proxy_env():
+        results = [_check_serper_tool(), _check_jina_tool(), _check_mineru_tool()]
+    failures = [result for result in results if result["status"] != "PASS"]
+    if not failures:
+        return True, results, ""
+    reason = "; ".join(f"{result['name']}: {result['detail']}" for result in failures)
+    return False, results, f"ResearchHarness tool preflight failed: {reason}"
+
+
+def _validate_researchharness_tool_env() -> None:
+    missing = [name for name in RESEARCHHARNESS_TOOL_ENV_VARS if not os.environ.get(name, "").strip()]
+    if missing:
+        joined = ", ".join(missing)
+        raise EvalConfigError(f"ResearchHarness tool env vars are required for real runs: {joined}")
 
 
 def _make_unique_runner(task_id: str, repeat_index: int, agent_name: str, batch_dir: Path) -> TaskRunner:
@@ -527,6 +659,54 @@ def _run_one(
     score_value: float | None = None
     registered_active = False
     try:
+        tool_ok, tool_check_results, tool_skip_reason = _run_researchharness_tool_preflight()
+        if not tool_ok:
+            duration = round(time.time() - start)
+            runner.workspace.mkdir(parents=True, exist_ok=True)
+            with open(runner.output_path, "a", encoding="utf-8") as output_f:
+                output_f.write(
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "error": tool_skip_reason,
+                            "tool_check_results": tool_check_results,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+            _write_meta(
+                runner,
+                "skipped",
+                {
+                    "exit_code": None,
+                    "model": model.name,
+                    "duration_seconds": duration,
+                    "termination": "tool_preflight_failed",
+                    "evaluation_config": config_name,
+                    "repeat_index": spec.repeat_index,
+                    "skip_reason": tool_skip_reason,
+                    "tool_check_status": "failed",
+                    "tool_check_results": tool_check_results,
+                },
+            )
+            return {
+                "task_id": spec.task_id,
+                "repeat": spec.repeat_index,
+                "run_id": runner.run_id,
+                "status": "skipped",
+                "score": None,
+                "duration_seconds": duration,
+                "model": model.name,
+                "workspace": str(runner.workspace),
+                "report_exists": False,
+                "termination": "tool_preflight_failed",
+                "trace_path": "",
+                "score_error": "",
+                "tool_check_status": "failed",
+                "tool_check_results": tool_check_results,
+                "skip_reason": tool_skip_reason,
+            }
         runner.setup_workspace()
         _register_active_run(
             runner,
@@ -580,6 +760,7 @@ def _run_one(
                 "evaluation_config": config_name,
                 "repeat_index": spec.repeat_index,
                 "score_error": score_error,
+                "tool_check_status": "passed",
             },
         )
         return {
@@ -595,6 +776,9 @@ def _run_one(
             "termination": termination,
             "trace_path": session.get("trace_path", ""),
             "score_error": score_error,
+            "tool_check_status": "passed",
+            "tool_check_results": [],
+            "skip_reason": "",
         }
     except Exception as exc:
         duration = round(time.time() - start)
@@ -637,6 +821,9 @@ def _run_one(
             "termination": "exception",
             "trace_path": session.get("trace_path", "") if session else "",
             "score_error": error,
+            "tool_check_status": "unknown",
+            "tool_check_results": [],
+            "skip_reason": "",
         }
     finally:
         if registered_active:
@@ -670,6 +857,8 @@ def _summarize(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[s
             {
                 "task_id": task_id,
                 "runs": len(subset),
+                "completed_runs": sum(1 for row in subset if row["status"] == "completed"),
+                "skipped_runs": sum(1 for row in subset if row["status"] == "skipped"),
                 "scored_runs": len(scores),
                 "mean": _mean(scores),
                 "std": _std(scores),
@@ -686,6 +875,9 @@ def _summarize(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[s
     overall = {
         "tasks": len(task_ids),
         "runs": len(rows),
+        "completed_runs": sum(1 for row in rows if row["status"] == "completed"),
+        "skipped_runs": sum(1 for row in rows if row["status"] == "skipped"),
+        "failed_runs": sum(1 for row in rows if row["status"] not in {"completed", "skipped"}),
         "scored_runs": len(all_scores),
         "mean": _mean(all_scores),
         "std": _std(all_scores),
@@ -709,7 +901,8 @@ def _runtime_summary(
         "max_concurrent_runs": max_workers,
         "runs": len(rows),
         "completed_runs": sum(1 for row in rows if row["status"] == "completed"),
-        "failed_runs": sum(1 for row in rows if row["status"] != "completed"),
+        "skipped_runs": sum(1 for row in rows if row["status"] == "skipped"),
+        "failed_runs": sum(1 for row in rows if row["status"] not in {"completed", "skipped"}),
         "sum_run_duration_seconds": round(sum(durations), 4) if durations else None,
         "mean_run_duration_seconds": _mean(durations),
         "median_run_duration_seconds": _median(durations),
@@ -778,6 +971,8 @@ def _run_columns() -> list[str]:
         "report_exists",
         "termination",
         "trace_path",
+        "tool_check_status",
+        "skip_reason",
         "score_error",
     ]
     return run_columns
@@ -787,6 +982,8 @@ def _task_columns() -> list[str]:
     return [
         "task_id",
         "runs",
+        "completed_runs",
+        "skipped_runs",
         "scored_runs",
         "mean",
         "std",
@@ -808,6 +1005,30 @@ def _safe_source(value: str) -> str:
     return value
 
 
+def _format_json_inline(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _failed_tool_names(row: dict[str, Any]) -> str:
+    results = row.get("tool_check_results") or []
+    failed = [
+        str(result.get("name") or "")
+        for result in results
+        if isinstance(result, dict) and result.get("status") != "PASS" and result.get("name")
+    ]
+    return ", ".join(failed) if failed else "-"
+
+
+def _failed_tool_details(row: dict[str, Any]) -> str:
+    results = row.get("tool_check_results") or []
+    details = [
+        f"{result.get('name')}: {result.get('detail')}"
+        for result in results
+        if isinstance(result, dict) and result.get("status") != "PASS" and result.get("name")
+    ]
+    return "; ".join(details) if details else str(row.get("skip_reason") or "-")
+
+
 def _format_task_plan(task_plan: list[TaskPlanItem]) -> str:
     return ", ".join(f"{item.task_id} x{item.repeats}" for item in task_plan)
 
@@ -826,6 +1047,20 @@ def _write_eval_report(
 ) -> Path:
     run_columns = _run_columns()
     task_columns = _task_columns()
+    tool_failure_rows = [
+        {
+            "task_id": row.get("task_id"),
+            "repeat": row.get("repeat"),
+            "run_id": row.get("run_id"),
+            "status": row.get("status"),
+            "termination": row.get("termination"),
+            "failed_tools": _failed_tool_names(row),
+            "failure_details": _failed_tool_details(row),
+            "skip_reason": row.get("skip_reason"),
+        }
+        for row in rows
+        if row.get("tool_check_status") == "failed" or row.get("skip_reason")
+    ]
     run_links = []
     for row in rows:
         workspace_rel = Path(row["workspace"]).relative_to(batch.batch_dir)
@@ -851,6 +1086,7 @@ def _write_eval_report(
         f"- Agent model name source: `{_safe_source(batch.model.name_source)}`",
         f"- Agent model API base source: `{_safe_source(batch.model.api_base_source)}`",
         f"- Agent model API key source: `{_safe_source(batch.model.api_key_source)}`",
+        f"- Agent model extra_body: `{_format_json_inline(batch.model.extra_body)}`",
         f"- Scoring enabled: `{batch.scorer.enabled}`",
         f"- Judge model: `{batch.scorer.model}`",
         f"- Judge model name source: `{_safe_source(batch.scorer.model_source)}`",
@@ -870,6 +1106,13 @@ def _write_eval_report(
         "## Run Directories",
         "",
         *run_links,
+        "",
+        "## Tool Preflight Issues",
+        "",
+        _render_markdown_table(
+            tool_failure_rows,
+            ["task_id", "repeat", "run_id", "status", "termination", "failed_tools", "failure_details", "skip_reason"],
+        ),
         "",
         "## Per-Run Results",
         "",
@@ -895,6 +1138,7 @@ def _print_dry_run(task_plan: list[TaskPlanItem], max_workers: int, model: Model
     print(f"Agent model name source: {model.name_source}")
     print(f"Agent model API base source: {model.api_base_source}")
     print(f"Agent model API key source: {model.api_key_source}")
+    print(f"Agent model extra_body keys: {', '.join(sorted(model.extra_body)) if model.extra_body else '-'}")
     print(f"Scoring: {'enabled' if scorer.enabled else 'disabled'}")
     if scorer.enabled:
         print(f"Judge model: {scorer.model}")
@@ -922,6 +1166,8 @@ def run_eval(config_path: Path, *, dry_run: bool, no_score: bool, skip_secret_ch
     if dry_run:
         _print_dry_run(task_plan, max_workers, model, scorer)
         return 0
+
+    _validate_researchharness_tool_env()
 
     config_name = str(config.get("name") or config_path.stem)
     batch = _new_batch_context(
