@@ -18,7 +18,7 @@ from typing import Optional
 
 from structai import LLMAgent, multi_thread
 
-from .config import SCORER_MODEL, IMAGE_EXTENSIONS, MAX_IMAGE_SIZE, TASKS_DIR
+from .config import JUDGE_MODEL_NAME, IMAGE_EXTENSIONS, MAX_IMAGE_SIZE, TASKS_DIR
 from .utils import get_run_workspace, safe_resolve
 
 RUBRIC = """You are a strict scientific peer reviewer evaluating an AI agent's ability to conduct end-to-end automated scientific research.
@@ -214,10 +214,19 @@ def score_run(run_id: str) -> dict:
     generated_images = _find_generated_images(workspace)
 
     # Create LLM agent using env vars from .env
+    judge_api_key = os.environ.get("JUDGE_API_KEY", "")
+    judge_api_base = os.environ.get("JUDGE_API_BASE", "")
+    if not judge_api_key or not judge_api_base or not JUDGE_MODEL_NAME:
+        return {
+            "error": (
+                "Judge API configuration is missing. Set JUDGE_API_KEY, "
+                "JUDGE_API_BASE, and JUDGE_MODEL_NAME in evaluation/.env."
+            )
+        }
     agent = LLMAgent(
-        api_key=os.environ.get("OPENAI_API_KEY", ""),
-        api_base=os.environ.get("OPENAI_BASE_URL", ""),
-        model_version=SCORER_MODEL,
+        api_key=judge_api_key,
+        api_base=judge_api_base,
+        model_version=JUDGE_MODEL_NAME,
         system_prompt="You are a strict scientific peer reviewer evaluating AI-generated research. Score the report against the criterion only — do not attempt to solve the research task yourself.",
         temperature=0,
         max_tokens=500,

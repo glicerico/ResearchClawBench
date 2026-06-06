@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 from contextlib import redirect_stdout
 from io import StringIO
@@ -229,6 +230,43 @@ judge_model:
                     )
 
             self.assertIn("max_llm_calls", str(ctx.exception))
+
+    def test_model_name_envs_are_resolved_explicitly(self):
+        config = {
+            "agent_model": {
+                "name_env": "AGENT_MODEL_NAME",
+                "api_base": "http://example.invalid/agent",
+                "api_key": "agent-key",
+            },
+            "judge_model": {
+                "enabled": True,
+                "name_env": "JUDGE_MODEL_NAME",
+                "api_base": "http://example.invalid/judge",
+                "api_key": "judge-key",
+            },
+        }
+        with patch.dict(os.environ, {"AGENT_MODEL_NAME": "agent-test", "JUDGE_MODEL_NAME": "judge-test"}):
+            model = cli_eval._load_model_config(config, require_secrets=True)
+            scorer = cli_eval._load_scorer_config(config, require_secrets=True, force_disabled=False)
+
+        self.assertEqual(model.name, "agent-test")
+        self.assertEqual(model.name_source, "AGENT_MODEL_NAME")
+        self.assertEqual(scorer.model, "judge-test")
+        self.assertEqual(scorer.model_source, "JUDGE_MODEL_NAME")
+
+    def test_missing_model_name_env_value_is_rejected_for_real_runs(self):
+        config = {
+            "agent_model": {
+                "name_env": "MISSING_AGENT_MODEL_NAME",
+                "api_base": "http://example.invalid/agent",
+                "api_key": "agent-key",
+            }
+        }
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(cli_eval.EvalConfigError) as ctx:
+                cli_eval._load_model_config(config, require_secrets=True)
+
+        self.assertIn("MISSING_AGENT_MODEL_NAME", str(ctx.exception))
 
     def test_concurrent_smoke_uses_cli_workspace_layout(self):
         with tempfile.TemporaryDirectory() as tmp:

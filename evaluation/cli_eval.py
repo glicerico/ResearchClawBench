@@ -22,6 +22,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent / ".env")
+
 from .config import TASKS_DIR, WORKSPACES_DIR
 from .run_task import TaskRunner
 from .utils import list_tasks
@@ -36,6 +40,7 @@ class ModelConfig:
     name: str
     api_base: str
     api_key: str
+    name_source: str
     api_key_source: str
     api_base_source: str
 
@@ -46,6 +51,7 @@ class ScorerConfig:
     model: str
     api_base: str
     api_key: str
+    model_source: str
     api_key_source: str
     api_base_source: str
 
@@ -181,7 +187,7 @@ def _section(config: dict[str, Any], name: str, default: dict[str, Any] | None =
     return value
 
 
-def _resolve_secret(
+def _resolve_config_value(
     section: dict[str, Any],
     *,
     value_key: str,
@@ -189,9 +195,9 @@ def _resolve_secret(
     label: str,
     required: bool,
 ) -> tuple[str, str]:
-    direct = section.get(value_key)
+    direct = str(section.get(value_key) or "").strip()
     if direct:
-        return str(direct), value_key
+        return direct, value_key
     env_name = str(section.get(env_key) or "").strip()
     if not env_name:
         raise EvalConfigError(f"{label} is required. Set {value_key} or {env_key} explicitly.")
@@ -201,24 +207,28 @@ def _resolve_secret(
             return value, env_name
     if required:
         raise EvalConfigError(f"{label} env var {env_name} is not set.")
-    return "", env_name
+    return f"${env_name}", env_name
 
 
 def _load_model_config(config: dict[str, Any], *, require_secrets: bool) -> ModelConfig:
     if "model" in config:
         raise EvalConfigError("Use agent_model for the evaluated model; the old model section is not supported.")
     model = _section(config, "agent_model")
-    name = str(model.get("name") or "").strip()
-    if not name:
-        raise EvalConfigError("agent_model.name is required.")
-    api_base, api_base_source = _resolve_secret(
+    name, name_source = _resolve_config_value(
+        model,
+        value_key="name",
+        env_key="name_env",
+        label="agent_model.name",
+        required=require_secrets,
+    )
+    api_base, api_base_source = _resolve_config_value(
         model,
         value_key="api_base",
         env_key="api_base_env",
         label="agent_model.api_base",
         required=require_secrets,
     )
-    api_key, api_key_source = _resolve_secret(
+    api_key, api_key_source = _resolve_config_value(
         model,
         value_key="api_key",
         env_key="api_key_env",
@@ -229,6 +239,7 @@ def _load_model_config(config: dict[str, Any], *, require_secrets: bool) -> Mode
         name=name,
         api_base=api_base,
         api_key=api_key,
+        name_source=name_source,
         api_key_source=api_key_source,
         api_base_source=api_base_source,
     )
@@ -240,18 +251,24 @@ def _load_scorer_config(config: dict[str, Any], *, require_secrets: bool, force_
     scorer = _section(config, "judge_model")
     yaml_enabled = _as_required_bool(scorer.get("enabled"), "judge_model.enabled")
     enabled = yaml_enabled and not force_disabled
-    model = str(scorer.get("name") or "").strip()
-    if enabled and not model:
-        raise EvalConfigError("judge_model.name is required when judge_model.enabled is true.")
+    model = ""
+    model_source = ""
     if enabled:
-        api_base, api_base_source = _resolve_secret(
+        model, model_source = _resolve_config_value(
+            scorer,
+            value_key="name",
+            env_key="name_env",
+            label="judge_model.name",
+            required=require_secrets,
+        )
+        api_base, api_base_source = _resolve_config_value(
             scorer,
             value_key="api_base",
             env_key="api_base_env",
             label="judge_model.api_base",
             required=require_secrets,
         )
-        api_key, api_key_source = _resolve_secret(
+        api_key, api_key_source = _resolve_config_value(
             scorer,
             value_key="api_key",
             env_key="api_key_env",
@@ -266,6 +283,7 @@ def _load_scorer_config(config: dict[str, Any], *, require_secrets: bool, force_
         model=model,
         api_base=api_base,
         api_key=api_key,
+        model_source=model_source,
         api_key_source=api_key_source,
         api_base_source=api_base_source,
     )
@@ -379,12 +397,12 @@ def _write_meta(runner: TaskRunner, status: str, extra: dict[str, Any]) -> None:
 def _score_completed_run(run_id: str, scorer: ScorerConfig) -> tuple[float | None, dict[str, Any] | None, str]:
     if not scorer.enabled:
         return None, None, ""
-    os.environ["OPENAI_API_KEY"] = scorer.api_key
-    os.environ["OPENAI_BASE_URL"] = scorer.api_base
-    os.environ["SCORER_MODEL"] = scorer.model
+    os.environ["JUDGE_API_KEY"] = scorer.api_key
+    os.environ["JUDGE_API_BASE"] = scorer.api_base
+    os.environ["JUDGE_MODEL_NAME"] = scorer.model
     from . import score as score_module
 
-    score_module.SCORER_MODEL = scorer.model
+    score_module.JUDGE_MODEL_NAME = scorer.model
     score_data = score_module.score_run(run_id)
     if not isinstance(score_data, dict):
         return None, None, "Scorer returned a non-dict result."
@@ -627,7 +645,7 @@ def _task_columns() -> list[str]:
 def _safe_source(value: str) -> str:
     if not value:
         return ""
-    if value in {"api_key", "agent_model.api_key", "judge_model.api_key"}:
+    if value in {"api_key", "agent_model.api_key", "judge_model.api_key", "name"}:
         return "inline"
     return value
 
@@ -671,10 +689,12 @@ def _write_eval_report(
         f"- Config file: `{batch.config_path}`",
         f"- Config name: `{batch.config_name}`",
         f"- Agent model: `{batch.model.name}`",
+        f"- Agent model name source: `{_safe_source(batch.model.name_source)}`",
         f"- Agent model API base source: `{_safe_source(batch.model.api_base_source)}`",
         f"- Agent model API key source: `{_safe_source(batch.model.api_key_source)}`",
         f"- Scoring enabled: `{batch.scorer.enabled}`",
         f"- Judge model: `{batch.scorer.model}`",
+        f"- Judge model name source: `{_safe_source(batch.scorer.model_source)}`",
         f"- Judge model API base source: `{_safe_source(batch.scorer.api_base_source)}`",
         f"- Judge model API key source: `{_safe_source(batch.scorer.api_key_source)}`",
         f"- Task plan: `{_format_task_plan(batch.task_plan)}`",
@@ -708,11 +728,13 @@ def _write_eval_report(
 def _print_dry_run(task_plan: list[TaskPlanItem], max_workers: int, model: ModelConfig, scorer: ScorerConfig) -> None:
     print("Dry run OK.")
     print(f"Agent model: {model.name}")
+    print(f"Agent model name source: {model.name_source}")
     print(f"Agent model API base source: {model.api_base_source}")
     print(f"Agent model API key source: {model.api_key_source}")
     print(f"Scoring: {'enabled' if scorer.enabled else 'disabled'}")
     if scorer.enabled:
         print(f"Judge model: {scorer.model}")
+        print(f"Judge model name source: {scorer.model_source}")
         print(f"Judge model API base source: {scorer.api_base_source}")
         print(f"Judge model API key source: {scorer.api_key_source}")
     print(f"Tasks: {len(task_plan)}")

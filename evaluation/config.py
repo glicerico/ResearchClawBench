@@ -14,8 +14,8 @@ TASKS_DIR = PROJECT_ROOT / "tasks"
 WORKSPACES_DIR = PROJECT_ROOT / "workspaces"
 WORKSPACES_DIR.mkdir(exist_ok=True)
 
-# Scoring model (OpenAI-compatible; override via SCORER_MODEL env var)
-SCORER_MODEL = os.environ.get("SCORER_MODEL", "gpt-5.1")
+# Judge model used by the scorer. Keep explicit: no default model fallback.
+JUDGE_MODEL_NAME = os.environ.get("JUDGE_MODEL_NAME", "")
 
 # Agent presets loaded from agents.json
 # <PROMPT> and <WORKSPACE> are replaced at runtime in run_task.py
