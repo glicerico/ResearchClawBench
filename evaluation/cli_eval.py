@@ -655,12 +655,17 @@ def _std(values: list[float]) -> float | None:
     return round(statistics.pstdev(values), 4) if len(values) > 1 else 0.0 if values else None
 
 
+def _median(values: list[float]) -> float | None:
+    return round(statistics.median(values), 4) if values else None
+
+
 def _summarize(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     task_ids = sorted({row["task_id"] for row in rows})
     task_summary: list[dict[str, Any]] = []
     for task_id in task_ids:
         subset = [row for row in rows if row["task_id"] == task_id]
         scores = [float(row["score"]) for row in subset if row.get("score") is not None]
+        durations = [float(row["duration_seconds"]) for row in subset if row.get("duration_seconds") is not None]
         task_summary.append(
             {
                 "task_id": task_id,
@@ -672,6 +677,9 @@ def _summarize(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[s
                 "min": round(min(scores), 4) if scores else None,
                 "max": round(max(scores), 4) if scores else None,
                 "success_rate": round(sum(1 for row in subset if row["status"] == "completed") / len(subset), 4),
+                "mean_duration_seconds": _mean(durations),
+                "min_duration_seconds": round(min(durations), 4) if durations else None,
+                "max_duration_seconds": round(max(durations), 4) if durations else None,
             }
         )
     all_scores = [float(row["score"]) for row in rows if row.get("score") is not None]
@@ -687,6 +695,32 @@ def _summarize(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[s
         "success_rate": round(sum(1 for row in rows if row["status"] == "completed") / len(rows), 4) if rows else 0.0,
     }
     return task_summary, overall
+
+
+def _runtime_summary(
+    rows: list[dict[str, Any]],
+    *,
+    wall_clock_seconds: float,
+    max_workers: int,
+) -> dict[str, Any]:
+    durations = [float(row["duration_seconds"]) for row in rows if row.get("duration_seconds") is not None]
+    summary = {
+        "wall_clock_seconds": round(wall_clock_seconds, 4),
+        "max_concurrent_runs": max_workers,
+        "runs": len(rows),
+        "completed_runs": sum(1 for row in rows if row["status"] == "completed"),
+        "failed_runs": sum(1 for row in rows if row["status"] != "completed"),
+        "sum_run_duration_seconds": round(sum(durations), 4) if durations else None,
+        "mean_run_duration_seconds": _mean(durations),
+        "median_run_duration_seconds": _median(durations),
+        "min_run_duration_seconds": round(min(durations), 4) if durations else None,
+        "max_run_duration_seconds": round(max(durations), 4) if durations else None,
+    }
+    if wall_clock_seconds > 0 and durations:
+        summary["effective_parallelism"] = round(sum(durations) / wall_clock_seconds, 4)
+    else:
+        summary["effective_parallelism"] = None
+    return summary
 
 
 def _format_value(value: Any) -> str:
@@ -727,6 +761,11 @@ def _render_markdown_table(rows: list[dict[str, Any]], columns: list[str]) -> st
     return "\n".join([header, separator, *body])
 
 
+def _render_markdown_kv_table(values: dict[str, Any]) -> str:
+    rows = [{"metric": key, "value": value} for key, value in values.items()]
+    return _render_markdown_table(rows, ["metric", "value"])
+
+
 def _run_columns() -> list[str]:
     run_columns = [
         "task_id",
@@ -745,7 +784,20 @@ def _run_columns() -> list[str]:
 
 
 def _task_columns() -> list[str]:
-    return ["task_id", "runs", "scored_runs", "mean", "std", "variance", "min", "max", "success_rate"]
+    return [
+        "task_id",
+        "runs",
+        "scored_runs",
+        "mean",
+        "std",
+        "variance",
+        "min",
+        "max",
+        "success_rate",
+        "mean_duration_seconds",
+        "min_duration_seconds",
+        "max_duration_seconds",
+    ]
 
 
 def _safe_source(value: str) -> str:
@@ -770,6 +822,7 @@ def _write_eval_report(
     rows: list[dict[str, Any]],
     task_summary: list[dict[str, Any]],
     overall: dict[str, Any],
+    runtime_summary: dict[str, Any],
 ) -> Path:
     run_columns = _run_columns()
     task_columns = _task_columns()
@@ -807,6 +860,13 @@ def _write_eval_report(
         f"- Max concurrent runs: `{batch.max_workers}`",
         f"- Total planned runs: `{_planned_runs(batch.task_plan)}`",
         "",
+        "## Runtime Summary",
+        "",
+        "Run durations are per-run workspace setup plus ResearchHarness agent runtime before judge scoring. "
+        "Wall-clock time is measured across the whole batch and includes scheduling and scoring overhead.",
+        "",
+        _render_markdown_kv_table(runtime_summary),
+        "",
         "## Run Directories",
         "",
         *run_links,
@@ -821,9 +881,7 @@ def _write_eval_report(
         "",
         "## Overall Summary",
         "",
-        "```json",
-        json.dumps(overall, indent=2, ensure_ascii=False),
-        "```",
+        _render_markdown_kv_table(overall),
         "",
     ]
     report_path = batch.batch_dir / _eval_report_name(batch.batch_id)
@@ -883,6 +941,7 @@ def run_eval(config_path: Path, *, dry_run: bool, no_score: bool, skip_secret_ch
     print(f"Starting {len(specs)} runs with max_concurrent_runs={max_workers}")
     print(f"Batch: {batch.batch_dir}")
 
+    batch_start = time.time()
     previous_handlers = _install_interrupt_handlers()
     try:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -911,15 +970,29 @@ def run_eval(config_path: Path, *, dry_run: bool, no_score: bool, skip_secret_ch
     finally:
         _restore_interrupt_handlers(previous_handlers)
 
+    batch_wall_clock_seconds = time.time() - batch_start
     rows.sort(key=lambda row: (row["task_id"], int(row["repeat"])))
     task_summary, overall = _summarize(rows)
+    runtime_summary = _runtime_summary(
+        rows,
+        wall_clock_seconds=batch_wall_clock_seconds,
+        max_workers=max_workers,
+    )
     print("\nPer-run results:")
     print(_render_table(rows, _run_columns()))
     print("\nPer-task summary:")
     print(_render_table(task_summary, _task_columns()))
+    print("\nRuntime summary:")
+    print(json.dumps(runtime_summary, indent=2, ensure_ascii=False))
     print("\nOverall summary:")
     print(json.dumps(overall, indent=2, ensure_ascii=False))
-    report_path = _write_eval_report(batch, rows=rows, task_summary=task_summary, overall=overall)
+    report_path = _write_eval_report(
+        batch,
+        rows=rows,
+        task_summary=task_summary,
+        overall=overall,
+        runtime_summary=runtime_summary,
+    )
     print(f"\nEvaluation report: {report_path}")
     return 0 if all(row["status"] == "completed" for row in rows) else 1
 
