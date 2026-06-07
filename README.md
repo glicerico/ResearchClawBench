@@ -7,7 +7,7 @@
 [![Official Site](https://img.shields.io/badge/Official%20Site-333399.svg?logo=homepage)](https://InternScience.github.io/ResearchClawBench-Home/)&#160;
 [![GitHub](https://img.shields.io/badge/GitHub-000000?logo=github&logoColor=white)](https://github.com/InternScience/ResearchClawBench)&#160;
 [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20HuggingFace-gray)](https://huggingface.co/datasets/InternScience/ResearchClawBench)&#160;
-![arXiv](https://img.shields.io/badge/arXiv-coming%20soon-b31b1b.svg?logo=arxiv&logoColor=white)&#160;
+[![arXiv](https://img.shields.io/badge/arXiv-paper-b31b1b.svg?logo=arxiv&logoColor=white)](https://arxiv.org/pdf/xxxx.xxxxx)&#160;
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Domains](https://img.shields.io/badge/Domains-10-green.svg)](#-scientific-domains)
 [![Tasks](https://img.shields.io/badge/Tasks-40-orange.svg)](#-scientific-domains)
@@ -65,6 +65,7 @@ Most AI benchmarks evaluate what models **know**. We evaluate what agents can **
 
 ### 📢 News
 
+- **2026-06-09** 📄 ResearchClawBench paper preprint is available on [arXiv](https://arxiv.org/pdf/xxxx.xxxxx).
 - **2026-06-05** 🧪 Added `rcb-eval`, a YAML-configured command-line evaluation workflow powered by ResearchHarness, supporting concurrent runs, repeated trials, automatic scoring, and Markdown evaluation reports with per-run and per-task statistics.
 - **2026-06-03** 🧬 Added leaderboard results for [EvoScientist](https://github.com/EvoScientist/EvoScientist) v0.1.1 while retaining EvoScientist v0.0.4 as a separate versioned baseline. Results are available on the [Leaderboard](https://internscience.github.io/ResearchClawBench-Home/).
 - **2026-06-02** 📊 Evaluated Claude-Opus-4.8 as an additional standalone LLM with [ResearchHarness](https://huggingface.co/spaces/InternScience/ResearchHarness). Results are available on the [Leaderboard](https://internscience.github.io/ResearchClawBench-Home/).
@@ -397,7 +398,7 @@ judge_model:
   api_key_env: JUDGE_API_KEY
 ```
 
-Real ResearchHarness batch runs also require tool credentials inherited by the installed `researchharness` package: `SERPER_KEY` for web/scholar search, `JINA_KEY` for web fetch, and `MINERU_TOKEN` for PDF reading. These can be placed in `evaluation/.env`; the CLI checks that they exist before creating any batch workspace and runs a lightweight tool preflight before each run. Runs with failed tool preflight are marked as skipped and summarized in `eval_report_<batch_id>.md`.
+Real ResearchHarness batch runs also require tool credentials inherited by the installed `researchharness` package: `SERPER_KEY` for web/scholar search, `JINA_KEY` for web fetch, and `MINERU_TOKEN` for PDF reading. These can be placed in `evaluation/.env`; the CLI checks that they exist before creating any batch workspace and runs a lightweight tool preflight before each run. The preflight uses the exact same process environment as the real evaluation run, including any proxy-related variables; the CLI does not rewrite proxy settings. If tool calls fail in your local network environment, adjust or disable your proxy settings in the shell or `.env`, then rerun. Runs with failed tool preflight are marked as skipped and summarized in `eval_report_<batch_id>.md`.
 
 Provider-specific OpenAI-compatible request options can be passed through `agent_model.extra_body`. For example, Qwen thinking mode can be toggled with `enable_thinking`; when thinking is enabled, keep `researchharness.max_output_tokens` high enough for the model to produce a final answer after thinking.
 

@@ -305,6 +305,50 @@ judge_model:
             self.assertIn("MINERU_TOKEN", str(ctx.exception))
             self.assertFalse(workspace_root.exists())
 
+    def test_tool_preflight_uses_current_environment_without_proxy_rewrites(self):
+        seen_proxy_values = []
+
+        def check_result(name: str):
+            seen_proxy_values.append(
+                (
+                    os.environ.get("HTTP_PROXY"),
+                    os.environ.get("HTTPS_PROXY"),
+                    os.environ.get("NO_PROXY"),
+                )
+            )
+            return {"name": name, "status": "PASS", "detail": "ok"}
+
+        env = {
+            "HTTP_PROXY": "http://proxy.example:7890",
+            "HTTPS_PROXY": "http://proxy.example:7890",
+            "NO_PROXY": "127.0.0.1,localhost",
+            "SERPER_KEY": "serper",
+            "JINA_KEY": "jina",
+            "MINERU_TOKEN": "mineru",
+        }
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(cli_eval, "_check_serper_tool", side_effect=lambda: check_result("SERPER_KEY/WebSearch")),
+            patch.object(cli_eval, "_check_jina_tool", side_effect=lambda: check_result("JINA_KEY/WebFetch")),
+            patch.object(cli_eval, "_check_mineru_tool", side_effect=lambda: check_result("MINERU_TOKEN/ReadPDF")),
+        ):
+            ok, results, reason = cli_eval._run_researchharness_tool_preflight()
+
+            self.assertTrue(ok)
+            self.assertEqual(reason, "")
+            self.assertEqual(len(results), 3)
+            self.assertEqual(
+                seen_proxy_values,
+                [
+                    ("http://proxy.example:7890", "http://proxy.example:7890", "127.0.0.1,localhost"),
+                    ("http://proxy.example:7890", "http://proxy.example:7890", "127.0.0.1,localhost"),
+                    ("http://proxy.example:7890", "http://proxy.example:7890", "127.0.0.1,localhost"),
+                ],
+            )
+            self.assertEqual(os.environ["HTTP_PROXY"], "http://proxy.example:7890")
+            self.assertEqual(os.environ["HTTPS_PROXY"], "http://proxy.example:7890")
+            self.assertEqual(os.environ["NO_PROXY"], "127.0.0.1,localhost")
+
     def test_real_run_skips_when_researchharness_tool_preflight_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

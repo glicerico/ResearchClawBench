@@ -8,7 +8,6 @@ installed ``researchharness`` package is used only as the agent runtime.
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
 import importlib.util
 import json
 import os
@@ -102,7 +101,6 @@ CLI_WORKSPACE_GROUP = "cli_runs"
 CLI_RUN_PREFIX = "cli"
 EVAL_REPORT_PREFIX = "eval_report"
 RESEARCHHARNESS_TOOL_ENV_VARS = ("SERPER_KEY", "JINA_KEY", "MINERU_TOKEN")
-PROXY_ENV_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 
 
 def _cli_workspaces_dir() -> Path:
@@ -404,23 +402,6 @@ def _preview_text(value: Any, limit: int = 500) -> str:
     return text[:limit] + ("...(truncated)" if len(text) > limit else "")
 
 
-@contextmanager
-def _without_proxy_env():
-    old_values = {name: os.environ.get(name) for name in (*PROXY_ENV_VARS, "NO_PROXY", "no_proxy")}
-    try:
-        for name in PROXY_ENV_VARS:
-            os.environ.pop(name, None)
-        os.environ["NO_PROXY"] = "*"
-        os.environ["no_proxy"] = "*"
-        yield
-    finally:
-        for name, value in old_values.items():
-            if value is None:
-                os.environ.pop(name, None)
-            else:
-                os.environ[name] = value
-
-
 def _tool_check_result(name: str, status: str, started_at: float, detail: str, output: Any = "") -> dict[str, Any]:
     return {
         "name": name,
@@ -499,8 +480,7 @@ def _check_mineru_tool() -> dict[str, Any]:
 
 
 def _run_researchharness_tool_preflight() -> tuple[bool, list[dict[str, Any]], str]:
-    with _without_proxy_env():
-        results = [_check_serper_tool(), _check_jina_tool(), _check_mineru_tool()]
+    results = [_check_serper_tool(), _check_jina_tool(), _check_mineru_tool()]
     failures = [result for result in results if result["status"] != "PASS"]
     if not failures:
         return True, results, ""
