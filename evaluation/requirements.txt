@@ -5,4 +5,4 @@ python-dotenv>=1.0
 structai
 openpyxl
 PyYAML>=6.0
-researchharness>=0.0.47
+researchharness>=0.0.48

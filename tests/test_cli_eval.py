@@ -488,6 +488,62 @@ judge_model:
             self.assertIn("Overall summary:", output_text)
             self.assertIn(f"Evaluation report: {report_files[0]}", output_text)
 
+    def test_get_run_workspace_ignores_invalid_cli_name_matches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace_root = Path(tmp) / "workspaces"
+            run_id = "cli_Information_002_20260608_050636_9bf734d3"
+
+            bad_without_meta = workspace_root / "cli_runs" / "cli_bad_a" / run_id
+            bad_without_meta.mkdir(parents=True)
+            (bad_without_meta / "outputs").mkdir()
+
+            bad_wrong_meta = workspace_root / "cli_runs" / "cli_bad_b" / run_id
+            bad_wrong_meta.mkdir(parents=True)
+            (bad_wrong_meta / "_meta.json").write_text(
+                json.dumps({"run_id": "different_run_id", "task_id": "Information_002"}),
+                encoding="utf-8",
+            )
+
+            good = workspace_root / "cli_runs" / "cli_good" / run_id
+            good.mkdir(parents=True)
+            (good / "_meta.json").write_text(
+                json.dumps({"run_id": run_id, "task_id": "Information_002"}),
+                encoding="utf-8",
+            )
+
+            with patch.object(utils, "WORKSPACES_DIR", workspace_root):
+                self.assertEqual(utils.get_run_workspace(run_id), good)
+                self.assertIsNone(utils.get_run_workspace(f"../{run_id}"))
+
+    def test_cli_scoring_uses_exact_workspace_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "exact_workspace"
+            workspace.mkdir()
+            scorer = cli_eval.ScorerConfig(
+                enabled=True,
+                model="fake-judge",
+                api_base="http://example.invalid/v1",
+                api_key="fake-key",
+                model_source="test",
+                api_key_source="test",
+                api_base_source="test",
+            )
+            captured = {}
+
+            def fake_score_workspace(path):
+                captured["workspace"] = Path(path)
+                return {"total_score": 42.0}
+
+            from evaluation import score as score_module
+
+            with patch.object(score_module, "score_workspace", side_effect=fake_score_workspace):
+                score_value, score_data, score_error = cli_eval._score_completed_run(workspace, scorer)
+
+            self.assertEqual(captured["workspace"], workspace)
+            self.assertEqual(score_value, 42.0)
+            self.assertEqual(score_data, {"total_score": 42.0})
+            self.assertEqual(score_error, "")
+
     def test_active_runs_are_marked_failed_on_interrupt(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

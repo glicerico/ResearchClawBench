@@ -600,7 +600,7 @@ def _write_meta(runner: TaskRunner, status: str, extra: dict[str, Any]) -> None:
     runner._write_meta(status, extra)
 
 
-def _score_completed_run(run_id: str, scorer: ScorerConfig) -> tuple[float | None, dict[str, Any] | None, str]:
+def _score_completed_run(workspace: Path, scorer: ScorerConfig) -> tuple[float | None, dict[str, Any] | None, str]:
     if not scorer.enabled:
         return None, None, ""
     os.environ["JUDGE_API_KEY"] = scorer.api_key
@@ -609,7 +609,7 @@ def _score_completed_run(run_id: str, scorer: ScorerConfig) -> tuple[float | Non
     from . import score as score_module
 
     score_module.JUDGE_MODEL_NAME = scorer.model
-    score_data = score_module.score_run(run_id)
+    score_data = score_module.score_workspace(workspace)
     if not isinstance(score_data, dict):
         return None, None, "Scorer returned a non-dict result."
     if score_data.get("error"):
@@ -724,7 +724,7 @@ def _run_one(
         status = "completed" if completed else "failed"
         if completed:
             try:
-                score_value, _score_data, score_error = _score_completed_run(runner.run_id, scorer)
+                score_value, _score_data, score_error = _score_completed_run(runner.workspace, scorer)
             except Exception as exc:
                 score_error = f"{type(exc).__name__}: {exc}"
         _write_meta(

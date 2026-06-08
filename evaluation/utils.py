@@ -88,17 +88,30 @@ def list_runs(task_id: Optional[str] = None):
     return runs
 
 
+def _is_run_workspace(path: Path, run_id: str) -> bool:
+    meta_path = path / "_meta.json"
+    if not meta_path.exists():
+        return False
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return False
+    return meta.get("run_id") == run_id
+
+
 def get_run_workspace(run_id: str) -> Optional[Path]:
-    """Return workspace path for a run."""
+    """Return a validated workspace path for a run."""
+    if "/" in run_id or "\\" in run_id:
+        return None
     ws = WORKSPACES_DIR / run_id
-    if ws.is_dir():
+    if ws.is_dir() and _is_run_workspace(ws, run_id):
         return ws
-    if "/" not in run_id and "\\" not in run_id:
-        cli_root = WORKSPACES_DIR / "cli_runs"
-        if cli_root.is_dir():
-            for cli_ws in cli_root.glob(f"*/{run_id}"):
-                if cli_ws.is_dir():
-                    return cli_ws
+    cli_root = WORKSPACES_DIR / "cli_runs"
+    if cli_root.is_dir():
+        for cli_ws in cli_root.glob(f"*/{run_id}"):
+            if cli_ws.is_dir() and _is_run_workspace(cli_ws, run_id):
+                return cli_ws
     return None
 
 

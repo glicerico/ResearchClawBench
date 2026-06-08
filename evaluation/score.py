@@ -179,17 +179,19 @@ def _score_single_item(agent: LLMAgent, report_text: str, item: dict,
     return {"score": 0, "reasoning": "Failed to parse scoring response."}
 
 
-def score_run(run_id: str) -> dict:
-    """Score a completed run against its task's checklist using parallel LLM calls."""
-    workspace = get_run_workspace(run_id)
-    if not workspace:
+def score_workspace(workspace: str | Path) -> dict:
+    """Score a completed run workspace against its task's checklist."""
+    workspace = Path(workspace)
+    if not workspace.is_dir():
         return {"error": "Workspace not found"}
-
     meta_path = workspace / "_meta.json"
     if not meta_path.exists():
         return {"error": "Run metadata not found"}
     with open(meta_path, "r", encoding="utf-8") as f:
         meta = json.load(f)
+    run_id = meta.get("run_id")
+    if not run_id:
+        return {"error": "Run metadata missing run_id"}
     task_id = meta.get("task_id")
     if not task_id:
         return {"error": "Run metadata missing task_id"}
@@ -282,3 +284,11 @@ def score_run(run_id: str) -> dict:
         json.dump(score_data, f, indent=2)
 
     return score_data
+
+
+def score_run(run_id: str) -> dict:
+    """Score a completed run by resolving its workspace from the run ID."""
+    workspace = get_run_workspace(run_id)
+    if not workspace:
+        return {"error": "Workspace not found"}
+    return score_workspace(workspace)
