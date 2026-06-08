@@ -2133,6 +2133,7 @@ function getModelLogo(model) {
     [/^GLM\b/i, 'static/logos/glm.webp'],
     [/^Kimi\b/i, 'static/logos/kimi.png'],
     [/^MiMo\b/i, 'static/logos/mimo.png'],
+    [/^MiniMax\b/i, 'static/logos/minimax.png'],
     [/^Grok\b/i, 'static/logos/grok.png'],
     [/^DeepSeek\b/i, 'static/logos/deepseek.png'],
   ];
