@@ -7,7 +7,7 @@
 [![Official Site](https://img.shields.io/badge/Official%20Site-333399.svg?logo=homepage)](https://InternScience.github.io/ResearchClawBench-Home/)&#160;
 [![GitHub](https://img.shields.io/badge/GitHub-000000?logo=github&logoColor=white)](https://github.com/InternScience/ResearchClawBench)&#160;
 [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20HuggingFace-gray)](https://huggingface.co/datasets/InternScience/ResearchClawBench)&#160;
-[![arXiv](https://img.shields.io/badge/arXiv-paper-b31b1b.svg?logo=arxiv&logoColor=white)](https://arxiv.org/pdf/xxxx.xxxxx)&#160;
+[![arXiv](https://img.shields.io/badge/arXiv-paper-b31b1b.svg?logo=arxiv&logoColor=white)](https://arxiv.org/pdf/2606.07591)&#160;
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Domains](https://img.shields.io/badge/Domains-10-green.svg)](#-scientific-domains)
 [![Tasks](https://img.shields.io/badge/Tasks-40-orange.svg)](#-scientific-domains)
@@ -65,7 +65,7 @@ Most AI benchmarks evaluate what models **know**. We evaluate what agents can **
 
 ### 📢 News
 
-- **2026-06-09** 📄 ResearchClawBench paper preprint is available on [arXiv](https://arxiv.org/pdf/xxxx.xxxxx).
+- **2026-06-09** 📄 ResearchClawBench paper preprint is available on [arXiv](https://arxiv.org/pdf/2606.07591).
 - **2026-06-09** 📊 Evaluated MiniMax-M3 as an additional standalone LLM with [ResearchHarness](https://huggingface.co/spaces/InternScience/ResearchHarness). Results are available on the [Leaderboard](https://internscience.github.io/ResearchClawBench-Home/).
 - **2026-06-05** 🧪 Added `rcb-eval`, a YAML-configured command-line evaluation workflow powered by ResearchHarness, supporting concurrent runs, repeated trials, automatic scoring, and Markdown evaluation reports with per-run and per-task statistics.
 - **2026-06-03** 🧬 Added leaderboard results for [EvoScientist](https://github.com/EvoScientist/EvoScientist) v0.1.1 while retaining EvoScientist v0.0.4 as a separate versioned baseline. Results are available on the [Leaderboard](https://internscience.github.io/ResearchClawBench-Home/).
