@@ -365,7 +365,8 @@ Install whichever agent(s) you plan to benchmark. You do not need every built-in
 | **OpenClaw** | [OpenClaw](https://openclaw.ai/) | Official website and setup entry |
 | **Nanobot** | [HKUDS/nanobot](https://github.com/HKUDS/nanobot) | Official GitHub repository |
 | **EvoScientist** | [EvoScientist/EvoScientist](https://github.com/EvoScientist/EvoScientist) | Official GitHub repository |
-| **ResearchClaw** | [ymx10086/ResearchClaw](https://github.com/ymx10086/ResearchClaw) | `pip install researchclaw` |
+| **ResearchClaw** | [ymx10086/ResearchClaw](https://github.com/ymx10086/ResearchClaw) | `pip install` |
+| **LingTai** | [Lingtai-AI/lingtai](https://github.com/Lingtai-AI/lingtai) | Official GitHub repository |
 | **ResearchHarness** | [InternScience/ResearchHarness](https://github.com/InternScience/ResearchHarness) | Lightweight baseline harness for testing different LLMs; install with `pip install researchharness`. The Web UI preset still uses a local checkout path in `agents.json`. |
 
 #### 5. Launch
@@ -440,7 +441,7 @@ After CLI evaluation, `python3 rcb-clear` prints a dry-run summary of duplicated
 
 ### 🤖 Supported Agents
 
-ResearchClawBench ships with built-in support for Claude Code, Codex CLI, ARIS Codex, OpenClaw, Nanobot, EvoScientist, ResearchClaw, plus a lightweight ResearchHarness baseline:
+ResearchClawBench ships with built-in support for Claude Code, Codex CLI, ARIS Codex, OpenClaw, Nanobot, EvoScientist, ResearchClaw, LingTai, plus a lightweight ResearchHarness baseline:
 
 | Agent | Command | Notes |
 |:------|:--------|:------|
@@ -451,6 +452,7 @@ ResearchClawBench ships with built-in support for Claude Code, Codex CLI, ARIS C
 | <img src="evaluation/static/logos/nanobot.svg" width="16" /> **Nanobot** | `nanobot agent -m ...` | Ultra-lightweight, reliable tool execution |
 | <img src="evaluation/static/logos/evo.svg" width="16" /> **EvoScientist** | `evosci --ui cli ...` | Self-evolving AI Scientists |
 | <img src="evaluation/static/logos/researchclaw.svg" width="16" /> **ResearchClaw** | `researchclaw agent -m ...` | AI research assistant with built-in skills |
+| <img src="evaluation/static/logos/lingtai.png" width="16" /> **LingTai** | `cd <WORKSPACE> && lingtai-tui -p <PROMPT>` | Substrate for an AI organization |
 | <img src="evaluation/static/logos/rh.svg" width="16" /> **ResearchHarness** | `python3 /abs/path/to/ResearchHarness/run_agent.py ...` | Lightweight baseline harness for testing different LLMs |
 
 #### 🔧 Add Your Own Agent
