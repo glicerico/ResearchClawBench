@@ -71,6 +71,10 @@ Most AI benchmarks evaluate what models **know**. We evaluate what agents can **
 - **2026-06-03** 🧬 Added leaderboard results for [EvoScientist](https://github.com/EvoScientist/EvoScientist) v0.1.1 while retaining EvoScientist v0.0.4 as a separate versioned baseline. Results are available on the [Leaderboard](https://internscience.github.io/ResearchClawBench-Home/).
 - **2026-06-02** 📊 Evaluated Claude-Opus-4.8 as an additional standalone LLM with [ResearchHarness](https://huggingface.co/spaces/InternScience/ResearchHarness). Results are available on the [Leaderboard](https://internscience.github.io/ResearchClawBench-Home/).
 - **2026-05-28** 📊 Evaluated two additional standalone LLMs with [ResearchHarness](https://huggingface.co/spaces/InternScience/ResearchHarness): Gemini-3.5-Flash and Qwen3.7-Max. Results are available on the [Leaderboard](https://internscience.github.io/ResearchClawBench-Home/).
+
+<details>
+<summary>👉 More News (Click to expand)</summary>
+
 - **2026-05-21** 📊 Evaluated four additional standalone LLMs with [ResearchHarness](https://huggingface.co/spaces/InternScience/ResearchHarness): Grok-4.3, Kimi-K2.6, MiMo-V2.5, and DeepSeek-V4-Pro. Results are available on the [Leaderboard](https://internscience.github.io/ResearchClawBench-Home/).
 - **2026-04-30** 📊 Evaluated standalone LLMs with [ResearchHarness](https://huggingface.co/spaces/InternScience/ResearchHarness): Claude-Opus-4.7, Claude-Opus-4.6, GLM-5.1, Qwen3.6-Plus, Qwen3.5-397B-A17B, GPT-5.5, GPT-5.4, MiMo-V2-Pro, Kimi-K2.5, Grok-4.1, and Gemini-3.1-Pro. Results are available on the [Leaderboard](https://internscience.github.io/ResearchClawBench-Home/).
 - **2026-04-13** 🧭 Added built-in [ARIS Codex](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) UI support and documentation. Imported benchmark runs are supported in the leaderboard and run browser; one-click launch is not yet supported in the public preset.
@@ -81,6 +85,8 @@ Most AI benchmarks evaluate what models **know**. We evaluate what agents can **
 - **2026-03-27** 📨 Opened the [ResearchClawBench submission Space](https://huggingface.co/spaces/InternScience/ResearchClawBench-Task-Submit) for community task uploads. New tasks are validated there and reviewed through Hugging Face dataset PRs instead of being added to this GitHub repository.
 - **2026-03-20** 🐈 Added [Nanobot](https://github.com/HKUDS/nanobot) as a new agent — ultra-lightweight OpenClaw alternative with reliable multi-step tool execution. Agent config moved to `agents.json` for easy customization.
 - **2026-03-19** 🚀 Initial release with Claude Code, Codex CLI, and OpenClaw support. 40 tasks across 10 scientific domains.
+
+</details>
 
 ---
 
