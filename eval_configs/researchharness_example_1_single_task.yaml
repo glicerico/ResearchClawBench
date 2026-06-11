@@ -20,7 +20,9 @@ max_concurrent_runs: 1
 researchharness:
   max_rounds: 500
   max_runtime_seconds: 10800
-  max_output_tokens: 40960
+  max_output_tokens: 16384
+  max_input_tokens: 131072
+  compact_trigger_tokens: "96k"
 
 judge_model:
   enabled: true
