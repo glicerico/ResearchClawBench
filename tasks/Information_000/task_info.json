@@ -12,6 +12,12 @@
       "path": "./data/doge.png",
       "type": "sequence_data",
       "description": "A specific meme image (\"Swole Doge vs. Cheems\") used in Figure 5 of the paper. It contains embedded text (\"Decoupling Visual Encoding\" vs. \"Single Visual Encoder\") and visual metaphors to evaluate the model's high-level semantic understanding of humor."
+    },
+    {
+      "name": "generation_prompt.txt",
+      "path": "./data/generation_prompt.txt",
+      "type": "generation_prompt",
+      "description": "A text-to-image prompt (a two-faced Janus figure with a cold/aged left side and a warm/youthful right side). Use the unified model's visual generation pathway to synthesize this image, save it under report/images/, and include it in the report; this evaluates the text-to-image generation capability shown in Figure 4 of the paper."
     }
   ]
 }
