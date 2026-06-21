@@ -596,6 +596,9 @@ def api_leaderboard():
         total = score_data.get("total_score", 0)
         entry = {
             "score": total,
+            # dual subscores (present for new score files; None for legacy ones)
+            "scientific_capability_score": score_data.get("scientific_capability_score"),
+            "paper_fidelity_score": score_data.get("paper_fidelity_score"),
             "run_id": run["run_id"],
             "duration_seconds": run.get("duration_seconds"),
             "model": run.get("model", ""),

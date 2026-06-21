@@ -17,6 +17,13 @@ WORKSPACES_DIR.mkdir(exist_ok=True)
 # Judge model used by the scorer. Keep explicit: no default model fallback.
 JUDGE_MODEL_NAME = os.environ.get("JUDGE_MODEL_NAME", "")
 
+# Dual-axis scoring weights for the combined leaderboard total.
+# Scientific capability is primary; paper fidelity is a secondary reference signal.
+#   total_score = SCIENTIFIC_WEIGHT * scientific_capability_score
+#               + FIDELITY_WEIGHT   * paper_fidelity_score
+SCIENTIFIC_WEIGHT = float(os.environ.get("SCIENTIFIC_WEIGHT", "0.7"))
+FIDELITY_WEIGHT = float(os.environ.get("FIDELITY_WEIGHT", "0.3"))
+
 # Agent presets loaded from agents.json
 # <PROMPT> and <WORKSPACE> are replaced at runtime in run_task.py
 _agents_path = Path(__file__).parent / "agents.json"

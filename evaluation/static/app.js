@@ -448,12 +448,18 @@ function renderLeaderboard(data) {
     if (!costText) return `<span class="leaderboard-cell-meta"><span>${timeText}</span></span>`;
     return `<span class="leaderboard-cell-meta"><span>${costText}</span><span>${timeText}</span></span>`;
   }
+  function renderSubScores(entry) {
+    const sci = entry?.scientific_capability_score;
+    const fid = entry?.paper_fidelity_score;
+    if (!Number.isFinite(sci) || !Number.isFinite(fid)) return '';
+    return `<span class="leaderboard-subscores"><span class="sub sci" title="Scientific capability">S ${sci.toFixed(0)}</span><span class="sub fid" title="Paper fidelity">F ${fid.toFixed(0)}</span></span>`;
+  }
   function renderScoreBlock(entry, clickable, extraClass = '', showDetailsMarker = true) {
     if (!entry || !Number.isFinite(entry.score)) return '<span class="score-cell score-cell-empty">-</span>';
     const scoreHtml = `<span class="score-cell" style="${cellStyle(entry.score)}">${entry.score.toFixed(1)}</span>`;
     const detailsState = getRunDetailsState(entry);
     const detailsHtml = showDetailsMarker ? runDetailsMarkerHtml(detailsState, 'leaderboard-details-marker') : '';
-    const inner = `<div class="leaderboard-score-wrap">${scoreHtml}${detailsHtml}${renderMetricLines(entry)}</div>`;
+    const inner = `<div class="leaderboard-score-wrap">${scoreHtml}${detailsHtml}${renderSubScores(entry)}${renderMetricLines(entry)}</div>`;
     const tdClass = `leaderboard-score-td${extraClass ? ` ${extraClass}` : ''}`;
     if (!clickable) return `<td class="${tdClass}">${inner}</td>`;
     const handler = entry.details_exported === false
@@ -470,6 +476,8 @@ function renderLeaderboard(data) {
     };
     return {
       score: average('score'),
+      scientific_capability_score: average('scientific_capability_score'),
+      paper_fidelity_score: average('paper_fidelity_score'),
       duration_seconds: average('duration_seconds'),
       cost_usd: average('cost_usd'),
       details_state: getEntriesDetailsState(scored),
@@ -484,7 +492,7 @@ function renderLeaderboard(data) {
   function renderSummaryCell(entry) {
     if (!entry || !Number.isFinite(entry.score)) return '<td class="no-score leaderboard-static-cell">-</td>';
     const scoreHtml = `<span class="score-cell" style="${cellStyle(entry.score)}">${entry.score.toFixed(1)}</span>`;
-    return `<td class="leaderboard-score-td leaderboard-static-cell"><div class="leaderboard-score-wrap">${scoreHtml}${renderMetricLines(entry)}</div></td>`;
+    return `<td class="leaderboard-score-td leaderboard-static-cell"><div class="leaderboard-score-wrap">${scoreHtml}${renderSubScores(entry)}${renderMetricLines(entry)}</div></td>`;
   }
   function renderSection(key, title, tableHtml, hint, note = '') {
     const noteHtml = note ? `<div class="leaderboard-section-note">${note}</div>` : '';
@@ -1805,29 +1813,48 @@ function renderScore(s) {
     </svg>`;
   }
 
-  // Show total score at the top
+  // Show total score at the top. New dual-axis files expose the two subscores;
+  // legacy files (total_score only) keep the original single-bar display.
+  const dual = Number.isFinite(s.scientific_capability_score);
+  const subBar = dual ? `
+      <div class="score-sub">
+        <span class="score-sub-pill sci" title="Scientific capability (primary, 70%)">🔬 Scientific ${s.scientific_capability_score}</span>
+        <span class="score-sub-pill fid" title="Paper fidelity (reference, 30%)">📄 Fidelity ${s.paper_fidelity_score}</span>
+      </div>` : '';
   document.getElementById('score-total-area').innerHTML = `
     <div class="score-total-bar">
       <div class="score-total-value">${s.total_score}</div>
-      <div class="score-total-label">Total Score &middot; 50 = matches paper</div>
+      <div class="score-total-label">Total Score &middot; 50 = matches paper${dual ? ' &middot; 0.7&times;Sci + 0.3&times;Fid' : ''}</div>
+      ${subBar}
     </div>`;
 
   // Inject per-item scores into existing checklist items
   for (const item of s.items) {
+    const hasDual = Number.isFinite(item.scientific_score);
     const slot = document.getElementById(`checklist-score-${item.index}`);
     if (slot) {
-      slot.innerHTML = `<div class="score-ring-wrap">${ringSvg(item.score)}<span class="score-ring-value">${item.score}</span></div>`;
+      slot.innerHTML = hasDual
+        ? `<div class="score-ring-dual">
+             <div class="score-ring-wrap" title="Scientific capability">${ringSvg(item.scientific_score, 28)}<span class="score-ring-value">${item.scientific_score}</span><span class="score-ring-tag">sci</span></div>
+             <div class="score-ring-wrap" title="Paper fidelity">${ringSvg(item.fidelity_score, 28)}<span class="score-ring-value">${item.fidelity_score}</span><span class="score-ring-tag">fid</span></div>
+           </div>`
+        : `<div class="score-ring-wrap">${ringSvg(item.score)}<span class="score-ring-value">${item.score}</span></div>`;
     }
     // Add reasoning below the checklist item content
     const el = document.querySelector(`.checklist-item[data-checklist-idx="${item.index}"]`);
-    if (el && item.reasoning) {
-      // Remove old reasoning if re-scoring
+    if (el) {
       const old = el.querySelector('.score-item-reasoning');
       if (old) old.remove();
-      const reasonEl = document.createElement('div');
-      reasonEl.className = 'score-item-reasoning';
-      reasonEl.textContent = item.reasoning;
-      el.appendChild(reasonEl);
+      let reasonHtml = '';
+      if (hasDual) {
+        reasonHtml = `<div class="score-item-reasoning">
+            <div><span class="reason-tag sci">Scientific ${item.scientific_score}</span> ${esc(item.scientific_reasoning || '')}</div>
+            <div><span class="reason-tag fid">Fidelity ${item.fidelity_score}</span> ${esc(item.fidelity_reasoning || '')}</div>
+          </div>`;
+      } else if (item.reasoning) {
+        reasonHtml = `<div class="score-item-reasoning">${esc(item.reasoning)}</div>`;
+      }
+      if (reasonHtml) el.insertAdjacentHTML('beforeend', reasonHtml);
     }
   }
 }
