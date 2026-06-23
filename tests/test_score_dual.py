@@ -30,9 +30,10 @@ class FakeAgent:
         return self.payload
 
 
-def _research_payload(score=60, reasoning="r"):
+def _research_payload(score=60, reasoning="r", gap="g"):
     """A nested research response covering every dimension."""
-    return {d["key"]: {"score": score, "reasoning": reasoning} for d in RESEARCH_DIMENSIONS}
+    return {d["key"]: {"score": score, "reasoning": reasoning, "gap": gap}
+            for d in RESEARCH_DIMENSIONS}
 
 
 class TestClamp(TestCase):
@@ -73,19 +74,22 @@ class TestFidelityItem(TestCase):
 
 class TestResearchNormalize(TestCase):
     def test_nested_shape(self):
-        out = _normalize_research_result(_research_payload(70, "ok"))
+        out = _normalize_research_result(_research_payload(70, "ok", "add ablation"))
         for d in RESEARCH_DIMENSIONS:
             self.assertEqual(out[d["key"]]["score"], 70)
             self.assertEqual(out[d["key"]]["reasoning"], "ok")
+            self.assertEqual(out[d["key"]]["gap"], "add ablation")
 
     def test_flat_shape_tolerated(self):
         flat = {}
         for d in RESEARCH_DIMENSIONS:
             flat[f"{d['key']}_score"] = 55
             flat[f"{d['key']}_reasoning"] = "flat"
+            flat[f"{d['key']}_gap"] = "flat gap"
         out = _normalize_research_result(flat)
         self.assertEqual(out[RESEARCH_DIMENSIONS[0]["key"]]["score"], 55)
         self.assertEqual(out[RESEARCH_DIMENSIONS[0]["key"]]["reasoning"], "flat")
+        self.assertEqual(out[RESEARCH_DIMENSIONS[0]["key"]]["gap"], "flat gap")
 
     def test_missing_and_malformed_default_zero(self):
         out = _normalize_research_result(None)
@@ -148,8 +152,9 @@ class TestAggregate(TestCase):
         agg = aggregate_scores(self._checklist(), self._fidelity(), _research_payload(60))
         self.assertEqual(len(agg["research_dimensions"]), len(RESEARCH_DIMENSIONS))
         d0 = agg["research_dimensions"][0]
-        for key in ("key", "name", "weight", "score", "reasoning"):
+        for key in ("key", "name", "weight", "score", "reasoning", "gap"):
             self.assertIn(key, d0)
+        self.assertEqual(d0["gap"], "g")
 
     def test_robust_to_empty(self):
         agg = aggregate_scores([{"weight": 1.0, "type": "text", "content": "A"}], [{}], {})

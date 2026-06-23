@@ -120,7 +120,7 @@ RESEARCH_DIMENSIONS = [
 ]
 
 _RESEARCH_RETURN_EXAMPLE = {
-    d["key"]: {"score": 0, "reasoning": "str"} for d in RESEARCH_DIMENSIONS
+    d["key"]: {"score": 0, "reasoning": "str", "gap": "str"} for d in RESEARCH_DIMENSIONS
 }
 
 # --- rubrics -----------------------------------------------------------------
@@ -162,7 +162,11 @@ Honest acknowledgement of limitations and scope is a POSITIVE. Substance over st
 _RESEARCH_TASK_INSTRUCTIONS = """## Task
 Score EACH research dimension on 0-100 (50 = on par with the target paper), using the bands above and the CRITICAL EVIDENCE RULE. Base each score on the agent's actual artifacts (report, code, outputs, trajectory), preferring what the agent demonstrably did over what it merely claims.
 
-Return a JSON object keyed by dimension, each with a score and 2-3 sentence reasoning:
+Return a JSON object keyed by dimension. For each dimension provide:
+- "score": 0-100.
+- "reasoning": 2-3 sentences justifying the score from the evidence.
+- "gap": 1-2 sentences naming SPECIFICALLY and ACTIONABLY what was missing or needed to earn a higher score on this dimension (e.g. "no ablation isolating the decoupled encoder", "claims X but no output file shows it"). If the dimension already clearly exceeds the paper, say what would push it even higher.
+
 {return_shape}"""
 
 _FIDELITY_TASK_INSTRUCTIONS = """## Task
@@ -466,11 +470,13 @@ def _normalize_research_result(result) -> dict:
         if isinstance(entry, dict):
             score = entry.get("score", 0)
             reasoning = entry.get("reasoning", "")
+            gap = entry.get("gap", "")
         else:
-            # tolerate flat shape: {"<key>_score": .., "<key>_reasoning": ..}
+            # tolerate flat shape: {"<key>_score": .., "<key>_reasoning": .., "<key>_gap": ..}
             score = result.get(f"{key}_score", 0)
             reasoning = result.get(f"{key}_reasoning", "")
-        out[key] = {"score": _clamp(score), "reasoning": str(reasoning)}
+            gap = result.get(f"{key}_gap", "")
+        out[key] = {"score": _clamp(score), "reasoning": str(reasoning), "gap": str(gap)}
     return out
 
 
@@ -524,6 +530,7 @@ def aggregate_scores(checklist: list[dict], fidelity_results: list[dict],
         dr = research_result.get(d["key"], {}) or {}
         sc = _clamp(dr.get("score", 0))
         reasoning = str(dr.get("reasoning", ""))
+        gap = str(dr.get("gap", ""))
         w = float(d.get("weight", 1.0))
         dimensions.append({
             "key": d["key"],
@@ -531,6 +538,7 @@ def aggregate_scores(checklist: list[dict], fidelity_results: list[dict],
             "weight": w,
             "score": sc,
             "reasoning": reasoning,
+            "gap": gap,
         })
         tot_sci += sc * w
         tot_dw += w
@@ -629,7 +637,7 @@ def score_workspace(workspace: str | Path) -> dict:
 
     # --- scientific capability: one holistic call over static artifacts ---
     artifacts = _gather_research_artifacts(workspace)
-    research_agent = _make_agent(max_tokens=2200)
+    research_agent = _make_agent(max_tokens=2600)
     research_result = _score_research(research_agent, report_text, instructions,
                                       checklist, artifacts)
 

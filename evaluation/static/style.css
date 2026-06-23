@@ -771,6 +771,8 @@ body { height: 100vh; font-family: var(--font); font-size: 17px; line-height: 1.
 .score-research-text { flex: 1; min-width: 0; }
 .score-research-name { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 .score-research-reason { font-size: 12px; color: var(--text-tertiary); font-style: italic; margin-top: 1px; }
+.score-research-gap { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
+.score-gap-tag { font-weight: 700; font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #b06a00; background: rgba(176,106,0,0.12); padding: 1px 5px; border-radius: 4px; margin-right: 5px; }
 .score-item-reasoning .reason-tag { font-style: normal; font-weight: 700; font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius: 4px; margin-right: 5px; }
 .score-item-reasoning .reason-tag.sci { color: #2e86ab; background: rgba(46,134,171,0.12); }
 .score-item-reasoning .reason-tag.fid { color: #8d6b94; background: rgba(141,107,148,0.12); }

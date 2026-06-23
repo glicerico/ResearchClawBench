@@ -69,7 +69,8 @@ Acquisition) are capped in the 21-40 band, no matter how polished the prose.
   "scoring_weights": {"scientific": 0.7, "fidelity": 0.3},
   "research_dimensions": [
     {"key": "problem_framing", "name": "Problem Framing", "weight": 1.0,
-     "score": 70, "reasoning": "..."}
+     "score": 70, "reasoning": "...",
+     "gap": "what was missing / needed to score higher on this stage"}
     // ... one per stage
   ],
   "items": [
@@ -103,8 +104,8 @@ call replaces the old per-item scientific calls, so total calls drop.
 
 ## UI (`static/app.js`, `static/style.css`)
 - Run-details panel: Total + 🔬 Scientific + 📄 Fidelity, a **Research process** section
-  listing each stage's ring + reasoning, and per checklist item a single **fidelity** ring +
-  reasoning.
+  listing each stage's ring + reasoning + a **"To improve"** gap note (what was missed to
+  score higher), and per checklist item a single **fidelity** ring + reasoning.
 - Leaderboard: total unchanged; each entry also shows `S`/`F` subscores.
 - Back-compat: old `_score.json` files (per-item `scientific_score`) still render their
   original dual rings; files with only `total_score` render the single bar.

@@ -1833,6 +1833,7 @@ function renderScore(s) {
             <div class="score-research-text">
               <div class="score-research-name">${esc(d.name)}</div>
               <div class="score-research-reason">${esc(d.reasoning || '')}</div>
+              ${d.gap ? `<div class="score-research-gap"><span class="score-gap-tag">To improve</span> ${esc(d.gap)}</div>` : ''}
             </div>
           </div>`).join('')}
       </div>` : '';
