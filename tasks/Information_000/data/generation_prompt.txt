@@ -1,0 +1,7 @@
+Generate an image of Janus, the two-faced Roman god, using the model's text-to-image (visual generation) pathway.
+
+- A single head with two faces split down the vertical midline.
+- Left face: aged and weathered, rendered in a cold, blue color palette.
+- Right face: youthful, rendered in a warm, golden color palette.
+
+Save the generated image under report/images/ and include it in the report as the text-to-image generation result.
