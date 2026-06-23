@@ -1818,27 +1818,51 @@ function renderScore(s) {
   const dual = Number.isFinite(s.scientific_capability_score);
   const subBar = dual ? `
       <div class="score-sub">
-        <span class="score-sub-pill sci" title="Scientific capability (primary, 70%)">🔬 Scientific ${s.scientific_capability_score}</span>
-        <span class="score-sub-pill fid" title="Paper fidelity (reference, 30%)">📄 Fidelity ${s.paper_fidelity_score}</span>
+        <span class="score-sub-pill sci" title="Scientific capability (primary, 70%) — holistic research-process score">🔬 Scientific ${s.scientific_capability_score}</span>
+        <span class="score-sub-pill fid" title="Paper fidelity (reference, 30%) — per-item reproduction score">📄 Fidelity ${s.paper_fidelity_score}</span>
       </div>` : '';
+
+  // Holistic research-process dimensions (new files). Each is anchored at 50 = paper.
+  const dims = Array.isArray(s.research_dimensions) ? s.research_dimensions : [];
+  const dimsBlock = dims.length ? `
+      <div class="score-research">
+        <div class="score-research-title">Research process &middot; 50 = on par with paper</div>
+        ${dims.map(d => `
+          <div class="score-research-row">
+            <div class="score-ring-wrap" title="${esc(d.name)}">${ringSvg(d.score, 26)}<span class="score-ring-value">${d.score}</span></div>
+            <div class="score-research-text">
+              <div class="score-research-name">${esc(d.name)}</div>
+              <div class="score-research-reason">${esc(d.reasoning || '')}</div>
+            </div>
+          </div>`).join('')}
+      </div>` : '';
+
   document.getElementById('score-total-area').innerHTML = `
     <div class="score-total-bar">
       <div class="score-total-value">${s.total_score}</div>
       <div class="score-total-label">Total Score &middot; 50 = matches paper${dual ? ' &middot; 0.7&times;Sci + 0.3&times;Fid' : ''}</div>
       ${subBar}
+      ${dimsBlock}
     </div>`;
 
-  // Inject per-item scores into existing checklist items
+  // Inject per-item scores into existing checklist items.
+  // New files: per-item PAPER FIDELITY only (research is holistic, shown above).
+  // Legacy files: keep the old dual sci/fid per-item rendering for back-compat.
   for (const item of s.items) {
-    const hasDual = Number.isFinite(item.scientific_score);
+    const legacyDual = Number.isFinite(item.scientific_score);
+    const hasFid = Number.isFinite(item.fidelity_score);
     const slot = document.getElementById(`checklist-score-${item.index}`);
     if (slot) {
-      slot.innerHTML = hasDual
-        ? `<div class="score-ring-dual">
+      if (legacyDual) {
+        slot.innerHTML = `<div class="score-ring-dual">
              <div class="score-ring-wrap" title="Scientific capability">${ringSvg(item.scientific_score, 28)}<span class="score-ring-value">${item.scientific_score}</span><span class="score-ring-tag">sci</span></div>
              <div class="score-ring-wrap" title="Paper fidelity">${ringSvg(item.fidelity_score, 28)}<span class="score-ring-value">${item.fidelity_score}</span><span class="score-ring-tag">fid</span></div>
-           </div>`
-        : `<div class="score-ring-wrap">${ringSvg(item.score)}<span class="score-ring-value">${item.score}</span></div>`;
+           </div>`;
+      } else if (hasFid) {
+        slot.innerHTML = `<div class="score-ring-wrap" title="Paper fidelity">${ringSvg(item.fidelity_score, 28)}<span class="score-ring-value">${item.fidelity_score}</span><span class="score-ring-tag">fid</span></div>`;
+      } else {
+        slot.innerHTML = `<div class="score-ring-wrap">${ringSvg(item.score)}<span class="score-ring-value">${item.score}</span></div>`;
+      }
     }
     // Add reasoning below the checklist item content
     const el = document.querySelector(`.checklist-item[data-checklist-idx="${item.index}"]`);
@@ -1846,9 +1870,13 @@ function renderScore(s) {
       const old = el.querySelector('.score-item-reasoning');
       if (old) old.remove();
       let reasonHtml = '';
-      if (hasDual) {
+      if (legacyDual) {
         reasonHtml = `<div class="score-item-reasoning">
             <div><span class="reason-tag sci">Scientific ${item.scientific_score}</span> ${esc(item.scientific_reasoning || '')}</div>
+            <div><span class="reason-tag fid">Fidelity ${item.fidelity_score}</span> ${esc(item.fidelity_reasoning || '')}</div>
+          </div>`;
+      } else if (hasFid) {
+        reasonHtml = `<div class="score-item-reasoning">
             <div><span class="reason-tag fid">Fidelity ${item.fidelity_score}</span> ${esc(item.fidelity_reasoning || '')}</div>
           </div>`;
       } else if (item.reasoning) {

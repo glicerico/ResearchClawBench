@@ -1,52 +1,92 @@
-# Dual-axis scoring: scientific capability vs. paper fidelity
+# Two-axis scoring: scientific capability vs. paper fidelity
 
-The scorer (`evaluation/score.py`) evaluates each checklist item on **two
-independent axes** instead of one, so the benchmark can separate *automated-research
-capability* from *reproduction of the target paper*.
+The scorer (`evaluation/score.py`) rates each run on **two independent axes**, anchored
+so that **50 = on par with the target paper** on each:
 
-## Why
-The target paper is a useful reference, but scoring only "did the report match the
-paper" measures reproduction, not research ability — and (empirically) a fabricated
-report that merely *states* the paper's known outputs can outscore genuine research.
-Splitting the score lets us reward valid, evidence-backed research even when it
-diverges from — or surpasses — the paper, while still tracking paper reproduction.
+- **Paper fidelity** — did the agent reproduce the target paper's *specific* results?
+  Judged **per checklist item** (the items are paper-derived demonstrations), from the
+  report + images.
+- **Scientific capability** — did the agent actually do good *research*? Judged
+  **holistically, once per run**, across research-process stages, against the agent's
+  real work product (report, code, outputs, run metadata, execution trajectory).
 
-## What each run now produces (`_score.json`)
+```
+paper_fidelity_score        = weighted avg of per-item fidelity scores
+scientific_capability_score = weighted avg of research-stage scores
+total_score                 = 0.7 * scientific_capability_score + 0.3 * paper_fidelity_score
+```
+
+## Why the two axes have different granularity
+The checklist items are *demonstrations* ("reproduce this figure / output"). Reproduction
+has a real per-item axis (fidelity), but it has **no per-item "research process" axis** —
+process quality (framing, design, evidence handling, adaptation, synthesis) is a property
+of the *whole effort*, not of one demo item. Grading "research" per demo item just made it
+collapse onto fidelity. So fidelity stays per-item and the research axis is judged once,
+holistically, against what the agent actually did.
+
+## Research-process stages (the scientific axis)
+Each stage is scored 0-100 (50 = on par with the paper) and contributes by `weight`
+(`RESEARCH_DIMENSIONS` in `score.py`):
+
+| Stage | Weight | Best observed in |
+|---|---|---|
+| Problem Framing | 1.0 | report |
+| Process Design | 1.0 | code + trajectory |
+| Experiment / Implementation Design | 0.5 | code |
+| Evidence Acquisition | 0.5 | outputs + trajectory |
+| Claim Handling | 1.0 | report vs. outputs |
+| Adaptation / Pivoting | 0.75 | trajectory |
+| Final Output / Synthesis | 1.0 | report |
+
+`adaptation` is *only* visible in the trajectory (clean reports hide dead-ends); the rubric
+tells the judge **not** to penalize a clean run that genuinely needed no pivots.
+
+## Evidence the research axis reads (static — no execution)
+The judge **reads** the agent's artifacts; it never runs anything. Gathered per run,
+each capped to keep the prompt bounded (~20-25K tokens total on Information_000):
+
+- `report/report.md` — the writeup (cap 40k chars)
+- `code/**` + top-level `*.py` — scripts the agent wrote (cap 16k)
+- `outputs/**` — logs / results the agent's code produced (cap 12k)
+- `_meta.json` — status, exit code, model, duration
+- `_agent_output.jsonl` — the Claude Code stream-json trajectory, **distilled** to a
+  compact `THINK` / `ACTION` / `RESULT` / `FINAL` log (cap 30k), dropping session and
+  token-accounting noise
+
+**Critical evidence rule (in the rubric):** trust what the agent *demonstrably did*
+(code/outputs/trajectory) over what the report *claims*. A claimed result with no code or
+output that produced it is fabrication → the relevant stages (Claim Handling, Evidence
+Acquisition) are capped in the 21-40 band, no matter how polished the prose.
+
+## What each run produces (`_score.json`)
 ```jsonc
 {
   "run_id": "...", "task_id": "...", "agent_name": "...",
-  "scientific_capability_score": 71.8,   // weighted avg of item scientific_score
-  "paper_fidelity_score": 41.75,         // weighted avg of item fidelity_score
-  "total_score": 62.78,                  // 0.7*scientific + 0.3*fidelity (primary)
-  "total_weight": 1.0,
+  "scientific_capability_score": 64.2,   // weighted avg of research stages
+  "paper_fidelity_score": 47.5,          // weighted avg of per-item fidelity
+  "total_score": 59.2,                   // 0.7*scientific + 0.3*fidelity (primary)
+  "total_weight": 1.0,                   // sum of checklist item weights
   "scoring_weights": {"scientific": 0.7, "fidelity": 0.3},
+  "research_dimensions": [
+    {"key": "problem_framing", "name": "Problem Framing", "weight": 1.0,
+     "score": 70, "reasoning": "..."}
+    // ... one per stage
+  ],
   "items": [
     {
       "index": 0, "type": "text", "weight": 0.3, "content": "...",
-      "scientific_score": 90, "scientific_reasoning": "...",
-      "fidelity_score": 60,   "fidelity_reasoning": "...",
-      "score": 81,            // legacy: the 0.7/0.3 blend (back-compat)
-      "reasoning": "[Scientific 90] ...  [Fidelity 60] ..."   // legacy (back-compat)
+      "fidelity_score": 45, "fidelity_reasoning": "...",
+      "score": 45,            // legacy: now mirrors fidelity (research is holistic)
+      "reasoning": "..."      // legacy: mirrors fidelity_reasoning
     }
   ]
 }
 ```
 
-Both axes are **anchored on the target paper: 50 = on par with the paper**, >50 =
-better than the paper on that axis, <50 = worse. A report whose research quality and
-reproduced results both equal the paper lands near 50/50.
-
-- **scientific_score (0-100; 50 = on par)** — research process/rigor relative to the
-  paper: valid method, use of the provided data, evidence the agent actually produced
-  (code/outputs/figures), sound quantitative reasoning, results→claims linkage, honest
-  limitations. 41-50 = equivalent to the paper; 51-70 = more rigorous/complete than the
-  paper; 71-90 = clearly beyond the paper. Fabricated/unsupported numbers are capped at
-  ≤40 regardless of polish.
-- **fidelity_score (0-100; 50 = on par)** — recovery of the paper's *specific* result
-  (values, trends, figure, mechanism, conclusion). 41-50 = reproduces what the paper
-  reported; 51-90 = reproduces AND exceeds the paper's reported results in the same
-  direction; a justified but *different* conclusion scores low here (rewarded on the
-  scientific axis instead).
+## Anchoring (both axes, every stage)
+- 0: absent. 1-20: token effort only. **21-40: attempted with major flaws, OR fabricated /
+  untraceable claims (the fabrication band).** 41-50: equivalent to the paper (50 = on par).
+  51-70: clearly better than the paper. 71-90: substantially beyond. 91-100: exceptional.
 
 ## Config (`evaluation/config.py`)
 ```python
@@ -54,57 +94,32 @@ SCIENTIFIC_WEIGHT = 0.7   # env: SCIENTIFIC_WEIGHT
 FIDELITY_WEIGHT   = 0.3   # env: FIDELITY_WEIGHT
 total_score = SCIENTIFIC_WEIGHT*scientific_capability_score + FIDELITY_WEIGHT*paper_fidelity_score
 ```
+Stages and their weights are edited in `RESEARCH_DIMENSIONS` (`score.py`).
 
-## Compatibility (no corpus rewrite required)
-- Existing checklist files are unchanged: each paper-derived item is **reinterpreted
-  through both lenses** by the judge prompt. Item `type`/`weight`/`path`/`keywords`
-  and the per-task criteria all keep working.
-- Back-compat: every item still has `score` and `reasoning`; the run still has
-  `total_score`. Old `_score.json` files (with only those fields) still render — the
-  UI shows the dual view only when `scientific_capability_score` is present
-  (`Number.isFinite` guard in `app.js`).
+## Cost / calls
+Per run: one fidelity call **per checklist item** (`max_tokens=500`) + **one** holistic
+research call (`max_tokens=2200`, larger input — it carries the artifacts). The research
+call replaces the old per-item scientific calls, so total calls drop.
 
 ## UI (`static/app.js`, `static/style.css`)
-The run-details evaluation panel shows Total + 🔬 Scientific + 📄 Fidelity, and per
-item two rings (sci/fid) with both reasonings. The leaderboard total is unchanged
-(it reads `total_score`); subscores are also added to each leaderboard entry for
-future display.
+- Run-details panel: Total + 🔬 Scientific + 📄 Fidelity, a **Research process** section
+  listing each stage's ring + reasoning, and per checklist item a single **fidelity** ring +
+  reasoning.
+- Leaderboard: total unchanged; each entry also shows `S`/`F` subscores.
+- Back-compat: old `_score.json` files (per-item `scientific_score`) still render their
+  original dual rings; files with only `total_score` render the single bar.
 
-## Validation (live judge, task Information_000; 50 = on par with paper)
-| Checklist | Report | Scientific | Fidelity | Total |
-|---|---|---|---|---|
-| original (paper-demo) | honest microcosm* | 24.9 | 27.0 | 25.5 |
-| original (paper-demo) | fabricated | 30.0 | 47.0 | 35.1 |
-| research-progress | honest microcosm | **60.4** | 31.2 | **51.6** |
-| research-progress | fabricated | **23.3** | 17.5 | **21.5** |
+## Compatibility
+- Checklist files are unchanged: paper-derived items drive **fidelity**; their text is also
+  passed to the research call as "the paper's bar" (context only).
+- Every item still carries `score` / `reasoning`, and each run still has `total_score`, so
+  older consumers keep working.
 
-Reading these against the 50 = on-par anchor:
-- **Above-paper work scores >50 where it earns it:** on the research-progress
-  checklist the honest report's controlled-ablation, broader-evaluation, and novel
-  mechanism items score 72-78 (better research than the paper's qualitative
-  treatment), giving scientific 60.4 (>50); its fidelity is 31 (<50) because it
-  diverges from the paper's specific demos — exactly the intended split.
-- **Fabrication lands below par:** ≤35 total on both checklists (scientific ≤30
-  because there is no traceable evidence). Re-anchoring fidelity at 50 also removed
-  the old loophole where merely stating the paper's known answer scored ~83 — it now
-  scores ~47 ("on par"), not above it.
-- *The honest microcosm scores low on the original paper-demo checklist only because
-  that report targets the broader task, not those three specific figure outputs; it
-  is the right report for the research-progress criteria.
-
-## Remaining limitations
-- **Copy-the-answer criteria are now bounded at ~par, not eliminated.** With fidelity
-  anchored at 50 = "reproduces what the paper reported," a report that merely states a
-  known output (e.g., an exact LaTeX string) scores ~50 on fidelity (on par) rather
-  than the ~83 it got before, and its scientific score stays low (no evidence), so its
-  total stays below par. Stating the answer can still earn the on-par fidelity points,
-  which is defensible for a reproduction measure; the scientific axis (and its ≤40 cap
-  on unsupported numbers) is what keeps fabrication below the paper. Authors who want
-  capability to dominate further can feature `scientific_capability_score` as the
-  leaderboard primary or raise `SCIENTIFIC_WEIGHT`.
-- **Judge non-determinism** persists (temp 0 still varies run-to-run, especially on
-  image items); average ≥3 runs for comparisons.
-- The judge **cannot execute agent code**, so the scientific axis grades the
-  *described* evidence; running agent code would strengthen it.
-- `max_tokens` raised to 900 (two reasonings + two scores); cost per item is modestly
-  higher.
+## Limitations
+- **Judge non-determinism** persists (temp 0 still varies, especially on image items);
+  average ≥3 runs for comparisons.
+- The judge reads artifacts but does **not execute** them, so Evidence Acquisition / Claim
+  Handling verify that outputs *exist and are consistent*, not that the code is bug-free.
+- Process stages depend on the trajectory being captured (`_agent_output.jsonl`); runs from
+  harnesses that don't emit it fall back to report/code/outputs only.
+- Long runs are distilled/truncated; very large trajectories keep head+tail with a marker.

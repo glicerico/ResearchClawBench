@@ -763,6 +763,14 @@ body { height: 100vh; font-family: var(--font); font-size: 17px; line-height: 1.
 .score-sub-pill.fid { color: #8d6b94; background: rgba(141,107,148,0.10); }
 .score-ring-dual { display: flex; gap: 14px; margin-top: 8px; }
 .score-ring-tag { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-tertiary); margin-left: 2px; }
+/* holistic research-process dimensions (under the total bar) */
+.score-research { margin-top: 14px; border-top: 1px solid var(--ring); padding-top: 10px; text-align: left; }
+.score-research-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-tertiary); margin-bottom: 8px; text-align: center; }
+.score-research-row { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; border-bottom: 1px solid var(--bg-inset); }
+.score-research-row:last-child { border-bottom: none; }
+.score-research-text { flex: 1; min-width: 0; }
+.score-research-name { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.score-research-reason { font-size: 12px; color: var(--text-tertiary); font-style: italic; margin-top: 1px; }
 .score-item-reasoning .reason-tag { font-style: normal; font-weight: 700; font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius: 4px; margin-right: 5px; }
 .score-item-reasoning .reason-tag.sci { color: #2e86ab; background: rgba(46,134,171,0.12); }
 .score-item-reasoning .reason-tag.fid { color: #8d6b94; background: rgba(141,107,148,0.12); }
