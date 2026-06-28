@@ -11,6 +11,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import secrets
 import shutil
 import signal
@@ -58,6 +59,7 @@ class ScorerConfig:
     model_source: str
     api_key_source: str
     api_base_source: str
+    label: str = ""
 
 
 @dataclass(frozen=True)
@@ -79,7 +81,7 @@ class BatchContext:
     config_name: str
     config_path: Path
     model: ModelConfig
-    scorer: ScorerConfig
+    scorers: list[ScorerConfig]
     task_plan: list[TaskPlanItem]
     max_workers: int
 
@@ -116,7 +118,7 @@ def _new_batch_context(
     config_path: Path,
     config_name: str,
     model: ModelConfig,
-    scorer: ScorerConfig,
+    scorers: list[ScorerConfig],
     task_plan: list[TaskPlanItem],
     max_workers: int,
 ) -> BatchContext:
@@ -132,7 +134,7 @@ def _new_batch_context(
                 config_name=config_name,
                 config_path=config_path,
                 model=model,
-                scorer=scorer,
+                scorers=scorers,
                 task_plan=task_plan,
                 max_workers=max_workers,
             )
@@ -271,35 +273,49 @@ def _load_model_config(config: dict[str, Any], *, require_secrets: bool) -> Mode
     )
 
 
+_JUDGE_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _judge_slug(model: str, fallback: str) -> str:
+    """Filesystem-safe short label for a judge model (e.g. anthropic/claude-opus-4.8
+    -> anthropic_claude_opus_4_8). Falls back to a positional name when empty."""
+    slug = _JUDGE_SLUG_RE.sub("_", model.lower()).strip("_")
+    return slug or fallback
+
+
 def _load_scorer_config(config: dict[str, Any], *, require_secrets: bool, force_disabled: bool) -> ScorerConfig:
     if "scorer" in config:
-        raise EvalConfigError("Use judge_model for the scoring model; the old scorer section is not supported.")
+        raise EvalConfigError(
+            "Use judge_model or judge_models for the scoring model; the old scorer section is not supported."
+        )
     scorer = _section(config, "judge_model")
     yaml_enabled = _as_required_bool(scorer.get("enabled"), "judge_model.enabled")
     enabled = yaml_enabled and not force_disabled
+    return _build_scorer(scorer, enabled=enabled, require_secrets=require_secrets, label_prefix="judge_model")
+
+
+def _build_scorer(
+    section: dict[str, Any],
+    *,
+    enabled: bool,
+    require_secrets: bool,
+    label_prefix: str,
+    fallback_label: str = "judge",
+) -> ScorerConfig:
     model = ""
     model_source = ""
     if enabled:
         model, model_source = _resolve_config_value(
-            scorer,
-            value_key="name",
-            env_key="name_env",
-            label="judge_model.name",
-            required=require_secrets,
+            section, value_key="name", env_key="name_env",
+            label=f"{label_prefix}.name", required=require_secrets,
         )
         api_base, api_base_source = _resolve_config_value(
-            scorer,
-            value_key="api_base",
-            env_key="api_base_env",
-            label="judge_model.api_base",
-            required=require_secrets,
+            section, value_key="api_base", env_key="api_base_env",
+            label=f"{label_prefix}.api_base", required=require_secrets,
         )
         api_key, api_key_source = _resolve_config_value(
-            scorer,
-            value_key="api_key",
-            env_key="api_key_env",
-            label="judge_model.api_key",
-            required=require_secrets,
+            section, value_key="api_key", env_key="api_key_env",
+            label=f"{label_prefix}.api_key", required=require_secrets,
         )
     else:
         api_base, api_base_source = "", ""
@@ -312,7 +328,53 @@ def _load_scorer_config(config: dict[str, Any], *, require_secrets: bool, force_
         model_source=model_source,
         api_key_source=api_key_source,
         api_base_source=api_base_source,
+        label=_judge_slug(model, fallback_label),
     )
+
+
+def _load_scorer_configs(config: dict[str, Any], *, require_secrets: bool, force_disabled: bool) -> list[ScorerConfig]:
+    """Resolve one or more judge models.
+
+    Back-compat: a single ``judge_model:`` mapping yields one judge. ``judge_models:``
+    yields an ensemble — either a plain list of per-judge mappings, or a mapping with
+    shared ``api_base``/``api_key`` (or their ``*_env`` forms) plus a ``models:`` list,
+    which is the OpenRouter case: one base+key, several model names.
+    """
+    if "scorer" in config:
+        raise EvalConfigError(
+            "Use judge_model or judge_models for the scoring model; the old scorer section is not supported."
+        )
+    has_plural = "judge_models" in config
+    has_singular = "judge_model" in config
+    if has_plural and has_singular:
+        raise EvalConfigError("Specify either judge_model or judge_models, not both.")
+    if not has_plural:
+        return [_load_scorer_config(config, require_secrets=require_secrets, force_disabled=force_disabled)]
+
+    raw = config["judge_models"]
+    shared: dict[str, Any] = {}
+    if isinstance(raw, dict):
+        shared = {k: v for k, v in raw.items()
+                  if k in ("api_base", "api_base_env", "api_key", "api_key_env")}
+        entries = raw.get("models")
+    else:
+        entries = raw
+    if not isinstance(entries, list) or not entries:
+        raise EvalConfigError("judge_models must be a non-empty list (or a mapping with a non-empty 'models' list).")
+
+    scorers: list[ScorerConfig] = []
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise EvalConfigError(f"judge_models[{index}] must be a mapping with at least a name/name_env.")
+        entry_enabled = _as_required_bool(entry["enabled"], f"judge_models[{index}].enabled") \
+            if "enabled" in entry else True
+        enabled = entry_enabled and not force_disabled
+        merged = {**shared, **entry}  # entry overrides shared base/key
+        scorers.append(_build_scorer(
+            merged, enabled=enabled, require_secrets=require_secrets,
+            label_prefix=f"judge_models[{index}]", fallback_label=f"judge{index + 1}",
+        ))
+    return scorers
 
 
 def _resolve_task_plan(config: dict[str, Any], default_repeats: int) -> list[TaskPlanItem]:
@@ -600,22 +662,104 @@ def _write_meta(runner: TaskRunner, status: str, extra: dict[str, Any]) -> None:
     runner._write_meta(status, extra)
 
 
-def _score_completed_run(workspace: Path, scorer: ScorerConfig) -> tuple[float | None, dict[str, Any] | None, str]:
-    if not scorer.enabled:
+def _agg_stat(values: list[float]) -> tuple[float | None, float | None]:
+    """Mean and population std of the per-judge values for one axis."""
+    if not values:
+        return None, None
+    mean = round(sum(values) / len(values), 2)
+    std = round(statistics.pstdev(values), 2) if len(values) > 1 else 0.0
+    return mean, std
+
+
+def _aggregate_judges(per_judge: list[dict[str, Any]]) -> dict[str, Any]:
+    """Combine N per-judge score dicts into one aggregate (mean + per-axis std).
+
+    Headline scores are the mean across judges; each axis also carries its own
+    standard deviation (inter-judge spread / disagreement). The first judge's
+    per-item/per-dimension detail is preserved so the run-detail UI still renders.
+    """
+    def axis(key: str) -> list[float]:
+        return [float(d[key]) for d in per_judge if d.get(key) is not None]
+
+    total_mean, total_std = _agg_stat(axis("total_score"))
+    sci_mean, sci_std = _agg_stat(axis("scientific_capability_score"))
+    fid_mean, fid_std = _agg_stat(axis("paper_fidelity_score"))
+
+    aggregate = dict(per_judge[0])  # keep run_id/task_id/items/research_dimensions for detail view
+    aggregate.pop("judge_model", None)  # singular doesn't apply to an ensemble
+    aggregate.update({
+        "judges": len(per_judge),
+        "judge_models": [d.get("judge_model") for d in per_judge],
+        "aggregation": "mean_across_judges",
+        "total_score": total_mean,
+        "scientific_capability_score": sci_mean,
+        "paper_fidelity_score": fid_mean,
+        "total_score_std": total_std,
+        "scientific_capability_score_std": sci_std,
+        "paper_fidelity_score_std": fid_std,
+        "per_judge": [
+            {
+                "judge_model": d.get("judge_model"),
+                "total_score": d.get("total_score"),
+                "scientific_capability_score": d.get("scientific_capability_score"),
+                "paper_fidelity_score": d.get("paper_fidelity_score"),
+            }
+            for d in per_judge
+        ],
+    })
+    return aggregate
+
+
+def _score_completed_run(
+    workspace: Path, scorers: ScorerConfig | list[ScorerConfig]
+) -> tuple[float | None, dict[str, Any] | None, str]:
+    if isinstance(scorers, ScorerConfig):
+        scorers = [scorers]
+    enabled = [s for s in scorers if s.enabled]
+    if not enabled:
         return None, None, ""
-    os.environ["JUDGE_API_KEY"] = scorer.api_key
-    os.environ["JUDGE_API_BASE"] = scorer.api_base
-    os.environ["JUDGE_MODEL_NAME"] = scorer.model
     from . import score as score_module
 
-    score_module.JUDGE_MODEL_NAME = scorer.model
-    score_data = score_module.score_workspace(workspace)
-    if not isinstance(score_data, dict):
-        return None, None, "Scorer returned a non-dict result."
-    if score_data.get("error"):
-        return None, score_data, str(score_data["error"])
-    total = score_data.get("total_score")
-    return (float(total) if total is not None else None), score_data, ""
+    # Single judge: write _score.json directly (legacy shape, std = 0 implicitly absent).
+    if len(enabled) == 1:
+        s = enabled[0]
+        score_data = score_module.score_workspace(
+            workspace, model=s.model, api_base=s.api_base, api_key=s.api_key
+        )
+        if not isinstance(score_data, dict):
+            return None, None, "Scorer returned a non-dict result."
+        if score_data.get("error"):
+            return None, score_data, str(score_data["error"])
+        total = score_data.get("total_score")
+        return (float(total) if total is not None else None), score_data, ""
+
+    # Ensemble: judge the same fixed research run with each model, then aggregate.
+    per_judge: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for s in enabled:
+        try:
+            data = score_module.score_workspace(
+                workspace, model=s.model, api_base=s.api_base, api_key=s.api_key,
+                out_name=f"_score_{s.label}.json",
+            )
+        except Exception as exc:
+            errors.append(f"{s.model}: {type(exc).__name__}: {exc}")
+            continue
+        if not isinstance(data, dict):
+            errors.append(f"{s.model}: scorer returned a non-dict result.")
+        elif data.get("error"):
+            errors.append(f"{s.model}: {data['error']}")
+        else:
+            per_judge.append(data)
+
+    if not per_judge:
+        return None, None, "; ".join(errors) or "All judges failed."
+
+    aggregate = _aggregate_judges(per_judge)
+    with open(workspace / "_score.json", "w", encoding="utf-8") as f:
+        json.dump(aggregate, f, indent=2)
+    total = aggregate.get("total_score")
+    return (float(total) if total is not None else None), aggregate, "; ".join(errors)
 
 
 def _run_one(
@@ -624,7 +768,7 @@ def _run_one(
     config: dict[str, Any],
     config_name: str,
     model: ModelConfig,
-    scorer: ScorerConfig,
+    scorers: list[ScorerConfig],
     batch_dir: Path,
     role_prompt: str,
     ResearchClawBenchAgent,
@@ -637,6 +781,8 @@ def _run_one(
     session: dict[str, Any] = {}
     score_error = ""
     score_value: float | None = None
+    judge_std: float | None = None
+    judges: int | None = None
     registered_active = False
     try:
         tool_ok, tool_check_results, tool_skip_reason = _run_researchharness_tool_preflight()
@@ -724,7 +870,10 @@ def _run_one(
         status = "completed" if completed else "failed"
         if completed:
             try:
-                score_value, _score_data, score_error = _score_completed_run(runner.workspace, scorer)
+                score_value, _score_data, score_error = _score_completed_run(runner.workspace, scorers)
+                if isinstance(_score_data, dict):
+                    judge_std = _score_data.get("total_score_std")
+                    judges = _score_data.get("judges")
             except Exception as exc:
                 score_error = f"{type(exc).__name__}: {exc}"
         _write_meta(
@@ -749,6 +898,8 @@ def _run_one(
             "run_id": runner.run_id,
             "status": status,
             "score": score_value,
+            "judge_std": judge_std,
+            "judges": judges,
             "duration_seconds": duration,
             "model": model.name,
             "workspace": str(runner.workspace),
@@ -946,6 +1097,8 @@ def _run_columns() -> list[str]:
         "run_id",
         "status",
         "score",
+        "judge_std",
+        "judges",
         "duration_seconds",
         "model",
         "report_exists",
@@ -1013,6 +1166,13 @@ def _format_task_plan(task_plan: list[TaskPlanItem]) -> str:
     return ", ".join(f"{item.task_id} x{item.repeats}" for item in task_plan)
 
 
+def _format_judges(scorers: list[ScorerConfig]) -> str:
+    enabled = [s for s in scorers if s.enabled]
+    if not enabled:
+        return "disabled"
+    return ", ".join(s.model for s in enabled)
+
+
 def _planned_runs(task_plan: list[TaskPlanItem]) -> int:
     return sum(item.repeats for item in task_plan)
 
@@ -1067,11 +1227,8 @@ def _write_eval_report(
         f"- Agent model API base source: `{_safe_source(batch.model.api_base_source)}`",
         f"- Agent model API key source: `{_safe_source(batch.model.api_key_source)}`",
         f"- Agent model extra_body: `{_format_json_inline(batch.model.extra_body)}`",
-        f"- Scoring enabled: `{batch.scorer.enabled}`",
-        f"- Judge model: `{batch.scorer.model}`",
-        f"- Judge model name source: `{_safe_source(batch.scorer.model_source)}`",
-        f"- Judge model API base source: `{_safe_source(batch.scorer.api_base_source)}`",
-        f"- Judge model API key source: `{_safe_source(batch.scorer.api_key_source)}`",
+        f"- Scoring enabled: `{any(s.enabled for s in batch.scorers)}`",
+        f"- Judge models: `{_format_judges(batch.scorers)}`",
         f"- Task plan: `{_format_task_plan(batch.task_plan)}`",
         f"- Max concurrent runs: `{batch.max_workers}`",
         f"- Total planned runs: `{_planned_runs(batch.task_plan)}`",
@@ -1112,19 +1269,22 @@ def _write_eval_report(
     return report_path
 
 
-def _print_dry_run(task_plan: list[TaskPlanItem], max_workers: int, model: ModelConfig, scorer: ScorerConfig) -> None:
+def _print_dry_run(task_plan: list[TaskPlanItem], max_workers: int, model: ModelConfig, scorers: list[ScorerConfig]) -> None:
     print("Dry run OK.")
     print(f"Agent model: {model.name}")
     print(f"Agent model name source: {model.name_source}")
     print(f"Agent model API base source: {model.api_base_source}")
     print(f"Agent model API key source: {model.api_key_source}")
     print(f"Agent model extra_body keys: {', '.join(sorted(model.extra_body)) if model.extra_body else '-'}")
-    print(f"Scoring: {'enabled' if scorer.enabled else 'disabled'}")
-    if scorer.enabled:
-        print(f"Judge model: {scorer.model}")
-        print(f"Judge model name source: {scorer.model_source}")
-        print(f"Judge model API base source: {scorer.api_base_source}")
-        print(f"Judge model API key source: {scorer.api_key_source}")
+    enabled = [s for s in scorers if s.enabled]
+    print(f"Scoring: {'enabled' if enabled else 'disabled'}")
+    if len(enabled) > 1:
+        print(f"Judge ensemble: {len(enabled)} models (per-axis mean + std)")
+    for s in enabled:
+        print(f"Judge model: {s.model}")
+        print(f"  name source: {s.model_source}")
+        print(f"  API base source: {s.api_base_source}")
+        print(f"  API key source: {s.api_key_source}")
     print(f"Tasks: {len(task_plan)}")
     print(f"Task plan: {_format_task_plan(task_plan)}")
     print(f"Max concurrent runs: {max_workers}")
@@ -1140,11 +1300,11 @@ def run_eval(config_path: Path, *, dry_run: bool, no_score: bool, skip_secret_ch
     task_plan = _resolve_task_plan(config, repeats)
     max_workers = _as_positive_int(config.get("max_concurrent_runs"), "max_concurrent_runs", 1)
     model = _load_model_config(config, require_secrets=not skip_secret_check)
-    scorer = _load_scorer_config(config, require_secrets=not skip_secret_check, force_disabled=no_score)
+    scorers = _load_scorer_configs(config, require_secrets=not skip_secret_check, force_disabled=no_score)
     ResearchClawBenchAgent, default_llm_config, role_prompt = _load_researchharness()
 
     if dry_run:
-        _print_dry_run(task_plan, max_workers, model, scorer)
+        _print_dry_run(task_plan, max_workers, model, scorers)
         return 0
 
     _validate_researchharness_tool_env()
@@ -1154,7 +1314,7 @@ def run_eval(config_path: Path, *, dry_run: bool, no_score: bool, skip_secret_ch
         config_path=config_path,
         config_name=config_name,
         model=model,
-        scorer=scorer,
+        scorers=scorers,
         task_plan=task_plan,
         max_workers=max_workers,
     )
@@ -1178,7 +1338,7 @@ def run_eval(config_path: Path, *, dry_run: bool, no_score: bool, skip_secret_ch
                     config=config,
                     config_name=config_name,
                     model=model,
-                    scorer=scorer,
+                    scorers=scorers,
                     batch_dir=batch.batch_dir,
                     role_prompt=role_prompt,
                     ResearchClawBenchAgent=ResearchClawBenchAgent,

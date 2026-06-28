@@ -24,8 +24,10 @@ research axis is judged once, holistically, against the actual work product, whi
 fidelity stays per-item. Both axes are anchored at 50 = on par with the target paper.
 """
 
+import base64
 import json
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -556,11 +558,84 @@ def aggregate_scores(checklist: list[dict], fidelity_results: list[dict],
     }
 
 
-def _make_agent(max_tokens: int) -> LLMAgent:
-    return LLMAgent(
-        api_key=os.environ.get("JUDGE_API_KEY", ""),
-        api_base=os.environ.get("JUDGE_API_BASE", ""),
-        model_version=JUDGE_MODEL_NAME,
+# --- structai image media-type correction -----------------------------------
+# structai's LLMAgent encodes every image as PNG bytes (encode_image saves with
+# format="PNG") but hardcodes a `data:image/jpeg;base64,` URL prefix. Strict
+# providers (Anthropic / Google / Bedrock via OpenRouter, etc.) reject the
+# mismatch with HTTP 400. We correct the declared media type from the actual
+# image bytes at the OpenAI request boundary of the judge agent, so the judge
+# keeps the lossless PNG and any provider accepts it.
+# Upstream root cause: https://github.com/black-yt/structai (llm_api.py image_url builder).
+
+_DATA_URI_RE = re.compile(r"^data:([^;,]+);base64,(.*)$", re.DOTALL)
+
+
+def _detect_image_mime(raw: bytes) -> Optional[str]:
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if raw.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if raw.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    if raw.startswith(b"BM"):
+        return "image/bmp"
+    return None
+
+
+def _corrected_image_data_uri(url: str) -> str:
+    if not isinstance(url, str) or not url.startswith("data:"):
+        return url
+    match = _DATA_URI_RE.match(url)
+    if not match:
+        return url
+    declared, b64 = match.group(1), match.group(2)
+    head = b64[:88]  # multiple of 4 -> ~66 decoded bytes, enough for any signature
+    if len(head) % 4:
+        head += "=" * (4 - len(head) % 4)
+    try:
+        raw = base64.b64decode(head)
+    except Exception:
+        return url
+    actual = _detect_image_mime(raw)
+    if actual and actual != declared:
+        return f"data:{actual};base64,{b64}"
+    return url
+
+
+def _fix_message_image_media_types(messages: list) -> list:
+    for msg in messages:
+        content = msg.get("content") if isinstance(msg, dict) else None
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "image_url":
+                image_url = block.get("image_url")
+                if isinstance(image_url, dict) and "url" in image_url:
+                    image_url["url"] = _corrected_image_data_uri(image_url["url"])
+    return messages
+
+
+def _install_image_media_type_fix(agent: LLMAgent) -> None:
+    """Wrap the agent's OpenAI client so image data URLs declare their true media type."""
+    completions = agent.client.chat.completions
+    original_create = completions.create
+
+    def patched_create(*args, **kwargs):
+        messages = kwargs.get("messages")
+        if isinstance(messages, list):
+            kwargs["messages"] = _fix_message_image_media_types(messages)
+        return original_create(*args, **kwargs)
+
+    completions.create = patched_create
+
+
+def _make_agent(max_tokens: int, *, model: str = "", api_base: str = "", api_key: str = "") -> LLMAgent:
+    agent = LLMAgent(
+        api_key=api_key or os.environ.get("JUDGE_API_KEY", ""),
+        api_base=api_base or os.environ.get("JUDGE_API_BASE", ""),
+        model_version=model or JUDGE_MODEL_NAME,
         system_prompt=(
             "You are a strict scientific peer reviewer for an automated-research "
             "benchmark. Score the agent's work against the rubric; do not attempt to "
@@ -571,10 +646,25 @@ def _make_agent(max_tokens: int) -> LLMAgent:
         time_limit=180,
         max_try=2,
     )
+    _install_image_media_type_fix(agent)
+    return agent
 
 
-def score_workspace(workspace: str | Path) -> dict:
-    """Score a completed run workspace against its task's checklist."""
+def score_workspace(
+    workspace: str | Path,
+    *,
+    model: str | None = None,
+    api_base: str | None = None,
+    api_key: str | None = None,
+    out_name: str = "_score.json",
+) -> dict:
+    """Score a completed run workspace against its task's checklist.
+
+    The judge model/credentials can be passed explicitly (per-judge, re-entrant) or
+    left as ``None`` to fall back to the JUDGE_MODEL_NAME global and JUDGE_API_KEY /
+    JUDGE_API_BASE environment variables (single-judge / legacy callers). ``out_name``
+    is the filename written under the workspace, so concurrent judges don't collide.
+    """
     workspace = Path(workspace)
     if not workspace.is_dir():
         return {"error": "Workspace not found"}
@@ -608,9 +698,10 @@ def score_workspace(workspace: str | Path) -> dict:
 
     generated_images = _find_generated_images(workspace)
 
-    judge_api_key = os.environ.get("JUDGE_API_KEY", "")
-    judge_api_base = os.environ.get("JUDGE_API_BASE", "")
-    if not judge_api_key or not judge_api_base or not JUDGE_MODEL_NAME:
+    judge_api_key = api_key if api_key is not None else os.environ.get("JUDGE_API_KEY", "")
+    judge_api_base = api_base if api_base is not None else os.environ.get("JUDGE_API_BASE", "")
+    judge_model = model if model is not None else JUDGE_MODEL_NAME
+    if not judge_api_key or not judge_api_base or not judge_model:
         return {
             "error": (
                 "Judge API configuration is missing. Set JUDGE_API_KEY, "
@@ -619,7 +710,9 @@ def score_workspace(workspace: str | Path) -> dict:
         }
 
     # --- paper fidelity: one call per checklist item (report + images) ---
-    fidelity_agent = _make_agent(max_tokens=500)
+    fidelity_agent = _make_agent(
+        max_tokens=500, model=judge_model, api_base=judge_api_base, api_key=judge_api_key
+    )
 
     def score_item(index, item_data):
         item_type = item_data.get("type", "text")
@@ -637,7 +730,9 @@ def score_workspace(workspace: str | Path) -> dict:
 
     # --- scientific capability: one holistic call over static artifacts ---
     artifacts = _gather_research_artifacts(workspace)
-    research_agent = _make_agent(max_tokens=2600)
+    research_agent = _make_agent(
+        max_tokens=2600, model=judge_model, api_base=judge_api_base, api_key=judge_api_key
+    )
     research_result = _score_research(research_agent, report_text, instructions,
                                       checklist, artifacts)
 
@@ -646,10 +741,11 @@ def score_workspace(workspace: str | Path) -> dict:
         "run_id": run_id,
         "task_id": task_id,
         "agent_name": agent_name,
+        "judge_model": judge_model,
         **agg,
     }
 
-    score_path = workspace / "_score.json"
+    score_path = workspace / out_name
     with open(score_path, "w", encoding="utf-8") as f:
         json.dump(score_data, f, indent=2)
 

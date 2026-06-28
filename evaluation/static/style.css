@@ -781,6 +781,9 @@ body { height: 100vh; font-family: var(--font); font-size: 17px; line-height: 1.
 .leaderboard-subscores .sub { font-size: 10px; font-weight: 600; font-family: var(--mono); padding: 0 4px; border-radius: 4px; line-height: 1.5; }
 .leaderboard-subscores .sub.sci { color: #2e86ab; background: rgba(46,134,171,0.12); }
 .leaderboard-subscores .sub.fid { color: #8d6b94; background: rgba(141,107,148,0.12); }
+/* multi-judge ensemble marker: tiny "σ" hint; full breakdown shown on hover (cell title) */
+.score-sigma { font-size: 9px; font-weight: 700; font-family: var(--mono); color: var(--text-tertiary); vertical-align: super; margin-left: 1px; cursor: help; }
+.leaderboard-score-wrap[title] { cursor: help; }
 
 /* --- Theme Switcher -------------------------------------------------- */
 #theme-switcher {

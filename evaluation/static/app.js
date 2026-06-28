@@ -257,9 +257,11 @@ function renderFrontierChart(data) {
   getFrontierAgentOrder(data).forEach((agent, i) => {
     const color = AGENT_COLORS[i % AGENT_COLORS.length];
     const scores = labels.map(t => data.scores[agent]?.[t]?.score ?? null);
+    const sigma = labels.map(t => data.scores[agent]?.[t]?.total_score_std ?? null);
     datasets.push({
       label: agent,
       data: scores,
+      sigma,
       borderColor: color,
       backgroundColor: color + '20',
       borderWidth: 1.5,
@@ -338,11 +340,62 @@ function renderFrontierChart(data) {
     }
   };
 
+  // Custom plugin: ±σ error bars (judge disagreement) on each agent point.
+  // Whiskers are dodged horizontally per agent so overlapping points stay
+  // distinguishable, and drawn boldly with a contrasting halo for visibility.
+  const errorBarsPlugin = {
+    id: 'errorBars',
+    afterDatasetsDraw(chart) {
+      const c = chart.ctx;
+      const yScale = chart.scales.y;
+      // Only agent lines carry sigma; index the visible ones for horizontal dodging.
+      const visible = chart.data.datasets
+        .map((ds, i) => i)
+        .filter(i => Array.isArray(chart.data.datasets[i].sigma) && !chart.getDatasetMeta(i).hidden);
+      const m = visible.length;
+      const dodge = 3;       // px between adjacent agents' whiskers at the same task
+      const cap = 3;         // half-width of the end caps
+      visible.forEach((di, k) => {
+        const ds = chart.data.datasets[di];
+        const meta = chart.getDatasetMeta(di);
+        const dx = (k - (m - 1) / 2) * dodge;
+        meta.data.forEach((pt, idx) => {
+          const v = ds.data[idx];
+          const s = ds.sigma[idx];
+          if (v == null || !Number.isFinite(s) || s <= 0) return;
+          const x = pt.x + dx;
+          const yTop = yScale.getPixelForValue(Math.min(100, v + s));
+          const yBot = yScale.getPixelForValue(Math.max(0, v - s));
+          const draw = () => {
+            c.beginPath();
+            c.moveTo(x, yTop); c.lineTo(x, yBot);             // whisker
+            c.moveTo(x - cap, yTop); c.lineTo(x + cap, yTop); // top cap
+            c.moveTo(x - cap, yBot); c.lineTo(x + cap, yBot); // bottom cap
+            c.stroke();
+          };
+          c.save();
+          c.lineCap = 'round';
+          // white halo for contrast where lines overlap
+          c.strokeStyle = 'rgba(255,255,255,0.9)';
+          c.globalAlpha = 0.9;
+          c.lineWidth = 4;
+          draw();
+          // colored bar on top
+          c.strokeStyle = ds.borderColor;
+          c.globalAlpha = 0.95;
+          c.lineWidth = 2;
+          draw();
+          c.restore();
+        });
+      });
+    }
+  };
+
   // Track domains for labeling
   frontierChart = new Chart(ctx, {
     type: 'line',
     data: { labels: domainLabels, datasets },
-    plugins: [zonePlugin],
+    plugins: [zonePlugin, errorBarsPlugin],
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -356,7 +409,12 @@ function renderFrontierChart(data) {
           bodyFont: { family: "'Fira Code', monospace", size: 16 },
           callbacks: {
             title: (items) => labels[items[0].dataIndex] || '',
-            label: c2 => `${getAgentDisplayLabel(data, c2.dataset.label)}: ${c2.parsed.y !== null ? c2.parsed.y.toFixed(1) : '-'}`,
+            label: c2 => {
+              const v = c2.parsed.y;
+              const s = Array.isArray(c2.dataset.sigma) ? c2.dataset.sigma[c2.dataIndex] : null;
+              const base = `${getAgentDisplayLabel(data, c2.dataset.label)}: ${v !== null ? v.toFixed(1) : '-'}`;
+              return Number.isFinite(s) && s > 0 ? `${base} ± ${s.toFixed(1)}` : base;
+            },
           },
         },
       },
@@ -448,6 +506,43 @@ function renderLeaderboard(data) {
     if (!costText) return `<span class="leaderboard-cell-meta"><span>${timeText}</span></span>`;
     return `<span class="leaderboard-cell-meta"><span>${costText}</span><span>${timeText}</span></span>`;
   }
+  function _sigNum(v) { return Number.isFinite(v) ? v.toFixed(1) : '-'; }
+  function _sig(std) { return Number.isFinite(std) ? ` ±${std.toFixed(1)}` : ''; }
+  function escAttr(s) { return esc(s).replace(/"/g, '&quot;'); }
+  // Full judge-ensemble breakdown, shown on hover via the cell's title attribute.
+  // Returns '' for single-judge / legacy cells (no inter-judge std).
+  function ensembleTitle(entry) {
+    if (!Number.isFinite(entry?.total_score_std)) return '';
+    const n = Number.isFinite(entry?.judges) ? Math.round(entry.judges) : null;
+    const lines = [n ? `Judge ensemble — ${n} models (mean ± σ)` : 'Judge ensemble (mean ± σ)'];
+    lines.push(`Total      ${_sigNum(entry.score)}${_sig(entry.total_score_std)}`);
+    lines.push(`Scientific ${_sigNum(entry.scientific_capability_score)}${_sig(entry.scientific_capability_score_std)}`);
+    lines.push(`Fidelity   ${_sigNum(entry.paper_fidelity_score)}${_sig(entry.paper_fidelity_score_std)}`);
+    if (Array.isArray(entry.per_judge) && entry.per_judge.length) {
+      lines.push('');
+      entry.per_judge.forEach(j => lines.push(`• ${j.judge_model}: ${_sigNum(j.total_score)}`));
+    }
+    return lines.join('\n');
+  }
+  // Tiny unobtrusive affordance so users know a hover breakdown exists.
+  function sigmaMarker(entry) {
+    return Number.isFinite(entry?.total_score_std) ? '<span class="score-sigma">σ</span>' : '';
+  }
+  // Combined hover tooltip: judge breakdown (if ensemble) + run time/cost.
+  // Keeps time/cost out of the dense grid while staying one hover away.
+  function cellTitle(entry) {
+    const lines = [];
+    const ens = ensembleTitle(entry);
+    if (ens) lines.push(ens);
+    const meta = [];
+    if (Number.isFinite(entry?.cost_usd)) meta.push('Cost ' + formatUsdCost(entry.cost_usd));
+    if (Number.isFinite(entry?.duration_seconds)) meta.push('Time ' + formatLeaderboardDuration(entry.duration_seconds));
+    if (meta.length) {
+      if (ens) lines.push('');
+      lines.push(meta.join('    '));
+    }
+    return lines.join('\n');
+  }
   function renderSubScores(entry) {
     const sci = entry?.scientific_capability_score;
     const fid = entry?.paper_fidelity_score;
@@ -459,7 +554,9 @@ function renderLeaderboard(data) {
     const scoreHtml = `<span class="score-cell" style="${cellStyle(entry.score)}">${entry.score.toFixed(1)}</span>`;
     const detailsState = getRunDetailsState(entry);
     const detailsHtml = showDetailsMarker ? runDetailsMarkerHtml(detailsState, 'leaderboard-details-marker') : '';
-    const inner = `<div class="leaderboard-score-wrap">${scoreHtml}${detailsHtml}${renderSubScores(entry)}${renderMetricLines(entry)}</div>`;
+    const t = cellTitle(entry);
+    const titleAttr = t ? ` title="${escAttr(t)}"` : '';
+    const inner = `<div class="leaderboard-score-wrap"${titleAttr}>${scoreHtml}${sigmaMarker(entry)}${detailsHtml}${renderSubScores(entry)}</div>`;
     const tdClass = `leaderboard-score-td${extraClass ? ` ${extraClass}` : ''}`;
     if (!clickable) return `<td class="${tdClass}">${inner}</td>`;
     const handler = entry.details_exported === false
@@ -478,6 +575,10 @@ function renderLeaderboard(data) {
       score: average('score'),
       scientific_capability_score: average('scientific_capability_score'),
       paper_fidelity_score: average('paper_fidelity_score'),
+      total_score_std: average('total_score_std'),
+      scientific_capability_score_std: average('scientific_capability_score_std'),
+      paper_fidelity_score_std: average('paper_fidelity_score_std'),
+      judges: average('judges'),
       duration_seconds: average('duration_seconds'),
       cost_usd: average('cost_usd'),
       details_state: getEntriesDetailsState(scored),
@@ -492,7 +593,9 @@ function renderLeaderboard(data) {
   function renderSummaryCell(entry) {
     if (!entry || !Number.isFinite(entry.score)) return '<td class="no-score leaderboard-static-cell">-</td>';
     const scoreHtml = `<span class="score-cell" style="${cellStyle(entry.score)}">${entry.score.toFixed(1)}</span>`;
-    return `<td class="leaderboard-score-td leaderboard-static-cell"><div class="leaderboard-score-wrap">${scoreHtml}${renderSubScores(entry)}${renderMetricLines(entry)}</div></td>`;
+    const t = cellTitle(entry);
+    const titleAttr = t ? ` title="${escAttr(t)}"` : '';
+    return `<td class="leaderboard-score-td leaderboard-static-cell"><div class="leaderboard-score-wrap"${titleAttr}>${scoreHtml}${sigmaMarker(entry)}${renderSubScores(entry)}</div></td>`;
   }
   function renderSection(key, title, tableHtml, hint, note = '') {
     const noteHtml = note ? `<div class="leaderboard-section-note">${note}</div>` : '';

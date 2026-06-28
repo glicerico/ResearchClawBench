@@ -599,6 +599,13 @@ def api_leaderboard():
             # dual subscores (present for new score files; None for legacy ones)
             "scientific_capability_score": score_data.get("scientific_capability_score"),
             "paper_fidelity_score": score_data.get("paper_fidelity_score"),
+            # inter-judge spread (present only for multi-judge ensemble score files)
+            "total_score_std": score_data.get("total_score_std"),
+            "scientific_capability_score_std": score_data.get("scientific_capability_score_std"),
+            "paper_fidelity_score_std": score_data.get("paper_fidelity_score_std"),
+            "judges": score_data.get("judges"),
+            "judge_models": score_data.get("judge_models"),
+            "per_judge": score_data.get("per_judge"),
             "run_id": run["run_id"],
             "duration_seconds": run.get("duration_seconds"),
             "model": run.get("model", ""),

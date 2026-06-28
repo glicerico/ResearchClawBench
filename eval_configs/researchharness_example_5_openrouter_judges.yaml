@@ -1,0 +1,46 @@
+# Judge-ensemble config: score each research run with THREE judge models via
+# OpenRouter and aggregate per axis (mean + standard deviation across judges).
+#
+# This is orthogonal to `repeats`: `repeats` re-runs the whole research process to
+# measure *agent* variability, while `judge_models` holds one research run fixed and
+# measures *judge* agreement/disagreement on it. Combine both if you want.
+#
+# OpenRouter makes this clean: one api_base + one api_key, three model slugs. Set:
+#   AGENT_MODEL_NAME / AGENT_API_BASE / AGENT_API_KEY   (the evaluated agent)
+#   OPENROUTER_API_BASE = https://openrouter.ai/api/v1
+#   OPENROUTER_API_KEY  = sk-or-...
+# Run with:
+#   python3 -m evaluation.cli_eval eval_configs/researchharness_example_5_openrouter_judges.yaml
+
+name: researchharness_openrouter_judges
+
+agent_model:
+  name_env: AGENT_MODEL_NAME
+  api_base_env: AGENT_API_BASE
+  api_key_env: AGENT_API_KEY
+
+tasks:
+  - id: Physics_003
+    repeats: 1
+
+repeats_per_task: 1
+max_concurrent_runs: 1
+
+researchharness:
+  max_rounds: 500
+  max_runtime_seconds: 10800
+  max_output_tokens: 16384
+  max_input_tokens: 131072
+  compact_trigger_tokens: "96k"
+
+# Three diverse evaluator models — one per provider, so the spread reflects genuine
+# cross-family disagreement rather than one vendor's quirks. The shared OpenRouter
+# api_base/api_key apply to every entry; each entry only overrides `name`.
+# Confirm the exact current slugs at https://openrouter.ai/models.
+judge_models:
+  api_base_env: OPENROUTER_API_BASE
+  api_key_env: OPENROUTER_API_KEY
+  models:
+    - name: anthropic/claude-opus-4.8
+    - name: openai/gpt-5.1
+    - name: google/gemini-3-pro

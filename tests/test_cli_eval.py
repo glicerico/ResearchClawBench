@@ -84,6 +84,7 @@ class CliEvalSmokeTests(TestCase):
             "researchharness_example_2_mixed_repeats.yaml",
             "researchharness_example_3_all_tasks.yaml",
             "researchharness_example_4_qwen_thinking.yaml",
+            "researchharness_example_5_openrouter_judges.yaml",
         ]
         for example in examples:
             with self.subTest(example=example):
@@ -530,8 +531,9 @@ judge_model:
             )
             captured = {}
 
-            def fake_score_workspace(path):
+            def fake_score_workspace(path, **kwargs):
                 captured["workspace"] = Path(path)
+                captured["kwargs"] = kwargs
                 return {"total_score": 42.0}
 
             from evaluation import score as score_module
@@ -540,9 +542,108 @@ judge_model:
                 score_value, score_data, score_error = cli_eval._score_completed_run(workspace, scorer)
 
             self.assertEqual(captured["workspace"], workspace)
+            # Single judge resolves credentials explicitly (re-entrant), no out_name override.
+            self.assertEqual(captured["kwargs"].get("model"), "fake-judge")
+            self.assertEqual(captured["kwargs"].get("api_base"), "http://example.invalid/v1")
             self.assertEqual(score_value, 42.0)
             self.assertEqual(score_data, {"total_score": 42.0})
             self.assertEqual(score_error, "")
+
+    def test_judge_model_singular_yields_one_scorer(self):
+        config = {
+            "judge_model": {
+                "enabled": True,
+                "name": "solo-judge",
+                "api_base": "http://example.invalid/v1",
+                "api_key": "solo-key",
+            },
+        }
+        scorers = cli_eval._load_scorer_configs(config, require_secrets=True, force_disabled=False)
+        self.assertEqual(len(scorers), 1)
+        self.assertEqual(scorers[0].model, "solo-judge")
+        self.assertTrue(scorers[0].enabled)
+
+    def test_judge_models_ensemble_shares_base_and_key(self):
+        config = {
+            "judge_models": {
+                "api_base_env": "OPENROUTER_API_BASE",
+                "api_key_env": "OPENROUTER_API_KEY",
+                "models": [
+                    {"name": "anthropic/claude-opus-4.8"},
+                    {"name": "openai/gpt-5.1"},
+                    {"name": "google/gemini-3-pro"},
+                ],
+            },
+        }
+        env = {"OPENROUTER_API_BASE": "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY": "sk-or-test"}
+        with patch.dict(os.environ, env):
+            scorers = cli_eval._load_scorer_configs(config, require_secrets=True, force_disabled=False)
+        self.assertEqual([s.model for s in scorers],
+                         ["anthropic/claude-opus-4.8", "openai/gpt-5.1", "google/gemini-3-pro"])
+        self.assertTrue(all(s.enabled for s in scorers))
+        self.assertTrue(all(s.api_base == "https://openrouter.ai/api/v1" for s in scorers))
+        self.assertTrue(all(s.api_key == "sk-or-test" for s in scorers))
+        self.assertEqual(scorers[0].label, "anthropic_claude_opus_4_8")
+        self.assertEqual(len({s.label for s in scorers}), 3)  # distinct -> distinct files
+
+    def test_judge_models_force_disabled_skips_secret_resolution(self):
+        config = {"judge_models": {"models": [{"name_env": "MISSING_JUDGE"}]}}
+        scorers = cli_eval._load_scorer_configs(config, require_secrets=True, force_disabled=True)
+        self.assertEqual(len(scorers), 1)
+        self.assertFalse(scorers[0].enabled)
+
+    def test_judge_model_and_judge_models_conflict(self):
+        config = {
+            "judge_model": {"enabled": True, "name": "a", "api_base": "b", "api_key": "c"},
+            "judge_models": [{"name": "d", "api_base": "b", "api_key": "c"}],
+        }
+        with self.assertRaises(cli_eval.EvalConfigError):
+            cli_eval._load_scorer_configs(config, require_secrets=False, force_disabled=False)
+
+    def test_ensemble_scoring_aggregates_per_axis_with_std(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            scorers = [
+                cli_eval.ScorerConfig(
+                    enabled=True, model=model, api_base="b", api_key="k",
+                    model_source="t", api_key_source="t", api_base_source="t", label=label,
+                )
+                for model, label in [("judge-a", "a"), ("judge-b", "b"), ("judge-c", "c")]
+            ]
+            payloads = {
+                "judge-a": {"total_score": 60.0, "scientific_capability_score": 50.0, "paper_fidelity_score": 80.0},
+                "judge-b": {"total_score": 70.0, "scientific_capability_score": 60.0, "paper_fidelity_score": 90.0},
+                "judge-c": {"total_score": 80.0, "scientific_capability_score": 70.0, "paper_fidelity_score": 100.0},
+            }
+            written = []
+
+            def fake_score_workspace(path, *, model, api_base, api_key, out_name="_score.json"):
+                written.append(out_name)
+                data = dict(payloads[model])
+                data["judge_model"] = model
+                data["items"] = []
+                data["research_dimensions"] = []
+                (Path(path) / out_name).write_text(json.dumps(data), encoding="utf-8")
+                return data
+
+            from evaluation import score as score_module
+
+            with patch.object(score_module, "score_workspace", side_effect=fake_score_workspace):
+                score_value, score_data, score_error = cli_eval._score_completed_run(workspace, scorers)
+
+            self.assertEqual(score_error, "")
+            self.assertAlmostEqual(score_value, 70.0)
+            self.assertEqual(score_data["judges"], 3)
+            self.assertAlmostEqual(score_data["total_score"], 70.0)
+            self.assertAlmostEqual(score_data["scientific_capability_score"], 60.0)
+            self.assertAlmostEqual(score_data["paper_fidelity_score"], 90.0)
+            self.assertAlmostEqual(score_data["total_score_std"], 8.16, places=2)
+            self.assertAlmostEqual(score_data["scientific_capability_score_std"], 8.16, places=2)
+            self.assertEqual(len(score_data["per_judge"]), 3)
+            # Aggregate plus one file per judge, all distinct (re-entrant, no collision).
+            self.assertTrue((workspace / "_score.json").exists())
+            self.assertEqual(set(written), {"_score_a.json", "_score_b.json", "_score_c.json"})
 
     def test_active_runs_are_marked_failed_on_interrupt(self):
         with tempfile.TemporaryDirectory() as tmp:
