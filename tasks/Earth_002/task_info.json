@@ -1,5 +1,5 @@
 {
-  "task": "The task of this paper is to develop a composite risk index combining tropical cyclone regime shifts and sea level rise, and apply it globally to evaluate where and to what extent mangroves and their ecosystem services are at risk by the end of the century, in order to inform climate-adaptive conservation and management strategies.",
+  "task": "Research question: how exposed are the world's mangroves, by the end of the century, to the combined threat of shifting tropical cyclone activity and accelerating sea level rise - and how much does the emission pathway matter? Using the provided global mangrove extent, IPCC AR6 regional sea level rise rates for three SSP scenarios, and historical tropical cyclone tracks, design a composite risk index that combines tropical cyclone regime shifts and sea level rise, and apply it globally to determine where and to what extent mangroves are at risk. The risk index is not specified for you: deciding how to quantify each hazard, how to normalize and combine the components into a risk score, and where to set the thresholds between risk levels is the core of the task. You must justify these methodological choices and show how sensitive your conclusions are to them. Use all three SSP scenarios to test the hypothesis that risk escalates with emissions, identify the regions most at risk, and state clearly which findings are robust to your design choices and which are not. The aim is to inform climate-adaptive conservation strategies, so connect the spatial results back to which mangrove regions most warrant protection.",
   "data": [
     {
       "name": "gmw_v4_ref_smpls_qad_v12.gpkg",
@@ -11,25 +11,25 @@
       "name": "total_ssp245_medium_confidence_rates.nc",
       "path": "./data/slr/total_ssp245_medium_confidence_rates.nc",
       "type": "netcdf",
-      "description": "Regional relative sea level rise rates for SSP2-4.5 (medium confidence) from IPCC AR6 (Garner et al., 2021), used to extract median rates 2020–2100."
+      "description": "Regional relative sea level rise rates for SSP2-4.5 (medium confidence) from IPCC AR6 (Garner et al., 2021), used to extract median rates 2020-2100."
     },
     {
       "name": "total_ssp370_medium_confidence_rates.nc",
       "path": "./data/slr/total_ssp370_medium_confidence_rates.nc",
       "type": "netcdf",
-      "description": "Regional relative sea level rise rates for SSP3-7.0 (medium confidence) from IPCC AR6 (Garner et al., 2021), used to extract median rates 2020–2100."
+      "description": "Regional relative sea level rise rates for SSP3-7.0 (medium confidence) from IPCC AR6 (Garner et al., 2021), used to extract median rates 2020-2100."
     },
     {
       "name": "total_ssp585_medium_confidence_rates.nc",
       "path": "./data/slr/total_ssp585_medium_confidence_rates.nc",
       "type": "netcdf",
-      "description": "Regional relative sea level rise rates for SSP5-8.5 (medium confidence) from IPCC AR6 (Garner et al., 2021), used to extract median rates 2020–2100."
+      "description": "Regional relative sea level rise rates for SSP5-8.5 (medium confidence) from IPCC AR6 (Garner et al., 2021), used to extract median rates 2020-2100."
     },
     {
       "name": "tracks_mit_mpi-esm1-2-hr_historical_reduced.nc",
       "path": "./data/tc/tracks_mit_mpi-esm1-2-hr_historical_reduced.nc",
       "type": "netcdf",
-      "description": "Historical tropical cyclone tracks from the MIT model (Emanuel et al., 2006) downscaled from CMIP6 MPI-ESM1-2-HR, covering 1850–2014. Used to calculate baseline cyclone frequencies after filtering and downsampling."
+      "description": "Historical tropical cyclone tracks from the MIT model (Emanuel et al., 2006) downscaled from CMIP6 MPI-ESM1-2-HR, covering 1850-2014. Used to calculate baseline cyclone frequencies after filtering and downsampling."
     }
   ]
 }

@@ -1,40 +1,62 @@
 [
     {
         "type": "text",
-        "content": "The analysis ingests posterior samples for the target black holes. For the stellar-mass black hole M33 X-7, the marginalized posterior distributions yield a mass of M_mean ± M_std solar masses and a dimensionless spin of a*_mean ± a*_std. This quantitative characterization of observational constraints forms the fundamental data layer for all subsequent superradiance calculations.",
+        "content": "The analysis ingests the posterior samples for both target black holes and motivates propagating the full posterior distributions rather than point estimates. For the stellar-mass black hole M33 X-7 the marginalized posteriors yield a mass of M_mean +/- M_std solar masses and a dimensionless spin of a*_mean +/- a*_std; the supermassive black hole IRAS 09149-6206 is characterized analogously. The reasoning makes explicit why the observational uncertainty (not just the central value) determines the constraining power of each system.",
         "path": null,
         "keywords": [
-            "The complete probability distribution of a black hole's parameters (mass M, spin a*) given the observational data, representing the state-of-the-art knowledge with quantified uncertainties.",
-            "The gravitational mass of the black hole, a primary determinant of the superradiant instability condition for a given boson mass (μ).",
-            "The angular momentum of the black hole normalized from 0 (non-spinning) to ~1 (maximally spinning). High spin is a prerequisite for efficient superradiance.",
-            "A key statistic from the posterior distribution that quantifies the observational uncertainty in the mass and spin estimates, which is propagated through the entire Bayesian analysis."
+            "Both black holes characterized: M and a* with uncertainties for M33 X-7 and IRAS 09149-6206.",
+            "Justifies using the full posterior distribution rather than point estimates, because the constraint depends on the probability mass in the superradiance-excluded region.",
+            "High spin identified as the prerequisite for efficient superradiance; the spin posterior is the key driver of the limit.",
+            "Recognizes that the mass posterior sets the boson-mass scale each system is sensitive to."
+        ],
+        "weight": 0.1
+    },
+    {
+        "type": "image",
+        "content": "The core statistical output is the exclusion curve for M33 X-7: the probability that the observed black hole has not been spun down via superradiance, as a function of the ultralight boson mass mu. This probability is computed by integrating the black hole's posterior distribution over the parameter space excluded by superradiance for each boson mass, using the instability condition that the superradiant growth time tau_sr be shorter than the black hole's effective lifetime tau_BH. The result identifies the excluded boson-mass window and is judged on the soundness of the method, not pixel-level matching.",
+        "path": "images/m33x7_exclusion.png",
+        "keywords": [
+            "Exclusion probability P_excl(mu) computed via Monte Carlo integration over the posterior samples.",
+            "Superradiance condition correctly applied: compares the superradiant growth time tau_sr against the effective black hole lifetime tau_BH for the relevant level(s).",
+            "Boson mass mu scanned over a physically motivated range and the constrained/excluded window explicitly identified.",
+            "A 95% threshold (P_excl = 0.05) used to define exclusion."
+        ],
+        "weight": 0.25
+    },
+    {
+        "type": "image",
+        "content": "The same exclusion analysis is applied to the supermassive black hole IRAS 09149-6206, and the agent recognizes that because its mass is many orders of magnitude larger than M33 X-7, it constrains a correspondingly lower boson-mass window. The two systems are shown to probe distinct, complementary mu regimes, and the agent uses both datasets rather than only the stellar-mass case.",
+        "path": "images/m33x7_exclusion.png",
+        "keywords": [
+            "Exclusion analysis carried out for IRAS 09149-6206 as well as M33 X-7.",
+            "Correctly reasons that the constrained mu scales inversely with black hole mass, so the SMBH probes a much lower mu range.",
+            "Presents the two systems as complementary windows rather than redundant.",
+            "Both provided datasets used in the final conclusion."
         ],
         "weight": 0.2
     },
     {
-        "type": "image",
-        "content": "The core statistical output is the exclusion curve, which plots the probability that the observed black hole (M33 X-7) has not been spun down via superradiance as a function of the ultralight boson mass μ. This probability is computed by integrating the black hole's posterior distribution over the parameter space excluded by the superradiance theory for each boson mass. The curve demonstrates the constraining power of the data and the sensitivity of the method.",
-        "path": "images/m33x7_exclusion.png",
+        "type": "text",
+        "content": "From the exclusion curves the analysis derives upper limits on the dimensionless self-interaction coupling g of the ultralight boson across the constrained mass range, e.g. g < Y GeV^-1 at 95% confidence for a boson of mass mu_X. Crucially, the derivation states the physical assumptions it rests on - the relevant superradiant level(s), the assumed effective lifetime tau_BH, and the saturation/self-interaction model - and demonstrates how sensitive the limit is to these assumptions (e.g. how g_max shifts if tau_BH is varied). Agreement with the reference at the order-of-magnitude / range level, with sound and explicit reasoning, is what is rewarded.",
+        "path": null,
         "keywords": [
-            "For each boson mass, the probability that the black hole's observed parameters are compatible with the absence of significant superradiant spin-down, calculated via Monte Carlo integration over the posterior samples.",
-            "The mass of the hypothetical ultralight boson (in eV), scanned over a wide range (e.g., 10⁻¹⁴ to 10⁻¹⁰ eV) to identify the most constrained regions.",
-            "The theoretical timescale for boson cloud growth and black hole spin depletion. The calculation checks if τ_sr is shorter than the black hole’s effective lifetime (τ_BH).",
-            "The statistical method that convolves the observational uncertainties (the full posterior) with the theoretical “yes/no” condition of superradiance to produce a smooth probability curve.",
-            "A horizontal reference line at P_excl = 0.05. Boson masses for which the curve falls below this line are considered ruled out at the 95% confidence level."
+            "Upper limit on the self-interaction coupling g (GeV^-1) derived over the constrained mu range.",
+            "Explicitly states the key assumptions: superradiant level(s), effective lifetime tau_BH, and saturation/self-interaction model.",
+            "Includes a sensitivity analysis showing how the limit responds to the main assumption(s), especially tau_BH.",
+            "Order-of-magnitude / range consistency with the reference, achieved through transparent reasoning rather than an exact fitted value."
         ],
-        "weight": 0.3
+        "weight": 0.25
     },
     {
         "type": "text",
-        "content": "This is the primary physical finding. By identifying where the exclusion probability (Result 2) falls below a specific confidence threshold (e.g., 5%), the analysis derives upper limits on the dimensionless self-interaction coupling constant g of the ultralight boson across a defined mass range. For example, the conclusion states that for a boson of mass μ_X eV, the coupling is constrained to be g < Y GeV⁻¹ at 95% confidence, given the age and observed parameters of the black hole M33 X-7.",
+        "content": "A synthesis that states the validate/reject outcome: for which boson masses the data exclude ULBs and for which they cannot, why the stellar-mass and supermassive black holes yield complementary constraints, and the principal caveats that would weaken or strengthen the conclusion. This is the research-judgment step that ties the statistical results back to the physics question.",
         "path": null,
         "keywords": [
-            "The maximum allowable value of the boson's self-interaction coupling constant, expressed in units of GeV⁻¹. Values above this limit would have caused observable spin-down.",
-            "A fundamental parameter of the boson field that governs the strength of interactions between bosons in the cloud, affecting the superradiance saturation and the potential for “bosenova” collapse.",
-            "The specific interval of boson masses (e.g., [μ_min, μ_max] in eV) for which a meaningful upper limit on g can be derived, determined by the black hole's mass and the superradiance condition.",
-            "The statistical certainty associated with the upper limit, derived from the probability threshold in the exclusion curve. It means there is a 95% probability that the true coupling strength lies below g_max if the boson exists at that mass.",
-            "The specific astrophysical source used to derive the constraint. The limit depends on this system's precise mass, spin, and estimated age (τ_BH)."
+            "Clear statement of where bosons are excluded vs. not excluded across mu.",
+            "Explains the complementarity of the two black-hole mass regimes.",
+            "Identifies the dominant caveats / sources of uncertainty in the conclusion.",
+            "Connects the statistical exclusion back to the original particle-physics question."
         ],
-        "weight": 0.5
+        "weight": 0.2
     }
 ]

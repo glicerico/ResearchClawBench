@@ -1,5 +1,5 @@
 {
-  "task": "To constrain the properties of ultralight bosons (ULBs) by developing and applying a novel Bayesian statistical framework. This framework translates the physics of black hole superradiance into a probabilistic model that ingests the full posterior distributions (not just point estimates) of black hole mass and spin measurements. The goal is to derive statistically rigorous upper limits on ULB masses and self-interaction coupling strengths, thereby using astrophysical data to probe fundamental particle physics.",
+  "task": "Research question: spinning black holes can be spun down by clouds of hypothetical ultralight bosons (ULBs) via superradiance. Using the provided mass-spin measurements for two black holes - the stellar-mass system M33 X-7 and the supermassive IRAS 09149-6206 - determine whether their observed spins can exclude the existence of ultralight bosons in any mass range, and if so derive quantitative limits on the boson mass mu and its self-interaction coupling g. The measurements are provided as full posterior sample sets, not point estimates: part of the task is deciding how the measurement uncertainties should enter your conclusion. You will need to connect the superradiance instability condition to the observed parameters, define what 'excluded' means statistically, and state clearly which physical assumptions (e.g. the relevant superradiant levels, the black hole's effective lifetime tau_BH, the role of self-interactions/saturation) your limits depend on, and how sensitive your conclusions are to them. Report which boson masses you can and cannot constrain with each black hole, and explain why the two systems probe different regimes.",
   "data": [
     {
       "name": "IRAS_09149-6206_samples.dat",
@@ -11,7 +11,7 @@
       "name": "M33_X-7_samples.dat",
       "path": "./data/M33_X-7_samples.dat",
       "type": "feature_data",
-      "description": "Contains the posterior distribution samples for the mass and dimensionless spin parameter of the stellar-mass black hole in the X-ray binary M33 X-7, serving as the primary dataset for demonstrating and applying the Bayesian constraint framework."
+      "description": "Contains the posterior distribution samples for the mass and dimensionless spin parameter of the stellar-mass black hole in the X-ray binary M33 X-7, serving as the primary dataset for demonstrating and applying the constraint framework."
     }
   ]
 }
