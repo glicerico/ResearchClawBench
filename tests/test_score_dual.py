@@ -6,8 +6,15 @@ import tempfile
 from pathlib import Path
 from unittest import TestCase
 
+import os
+from unittest import mock
+
 from evaluation.score import (
     aggregate_scores,
+    aggregate_judges,
+    agg_stat,
+    default_judge_ensemble,
+    _judge_slug,
     _score_item_fidelity,
     _normalize_research_result,
     _distill_trajectory,
@@ -195,6 +202,22 @@ class TestTrajectoryDistill(TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(_distill_trajectory(Path(tmp)), "")
 
+    def test_non_dict_jsonl_lines_are_skipped(self):
+        # Codex CLI and similar agents emit bare scalars/arrays on some lines;
+        # the distiller must skip them rather than crash on .get().
+        raw = "\n".join([
+            "123",
+            "\"a bare string\"",
+            "[1, 2, 3]",
+            json.dumps({"type": "assistant", "message": {"content": [
+                {"type": "text", "text": "real work here"}]}}),
+        ])
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = Path(tmp)
+            (ws / "_agent_output.jsonl").write_text(raw, encoding="utf-8")
+            out = _distill_trajectory(ws)
+        self.assertIn("THINK: real work here", out)
+
 
 class TestArtifactGather(TestCase):
     def test_code_and_outputs_read(self):
@@ -224,3 +247,79 @@ class TestBackCompat(TestCase):
         self.assertIn("total_score", agg)
         self.assertIn("score", agg["items"][0])
         self.assertIn("reasoning", agg["items"][0])
+
+
+class TestAggStat(TestCase):
+    def test_single_value_has_zero_std(self):
+        self.assertEqual(agg_stat([70.0]), (70.0, 0.0))
+
+    def test_empty_is_none(self):
+        self.assertEqual(agg_stat([]), (None, None))
+
+    def test_population_std(self):
+        mean, std = agg_stat([60.0, 70.0, 80.0])
+        self.assertEqual(mean, 70.0)
+        self.assertAlmostEqual(std, 8.16, places=2)
+
+
+class TestAggregateJudges(TestCase):
+    def _judge(self, model, total, sci, fid):
+        return {
+            "run_id": "r1", "task_id": "Astronomy_000", "agent_name": "A",
+            "judge_model": model, "items": [{"score": 1}],
+            "research_dimensions": ["x"],
+            "total_score": total,
+            "scientific_capability_score": sci,
+            "paper_fidelity_score": fid,
+        }
+
+    def test_means_std_and_per_judge(self):
+        per_judge = [
+            self._judge("m1", 60, 50, 80),
+            self._judge("m2", 70, 60, 90),
+            self._judge("m3", 80, 70, 100),
+        ]
+        agg = aggregate_judges(per_judge)
+        self.assertEqual(agg["judges"], 3)
+        self.assertEqual(agg["judge_models"], ["m1", "m2", "m3"])
+        self.assertEqual(agg["total_score"], 70.0)
+        self.assertAlmostEqual(agg["total_score_std"], 8.16, places=2)
+        self.assertEqual(agg["scientific_capability_score"], 60.0)
+        self.assertEqual(agg["paper_fidelity_score"], 90.0)
+        self.assertEqual(len(agg["per_judge"]), 3)
+        # singular judge_model removed; detail (items) preserved for the UI
+        self.assertNotIn("judge_model", agg)
+        self.assertEqual(agg["items"], [{"score": 1}])
+
+
+class TestDefaultJudgeEnsemble(TestCase):
+    def test_ensemble_from_judge_models(self):
+        env = {
+            "JUDGE_MODELS": "a/x, b/y ,c/z",
+            "OPENROUTER_API_BASE": "https://openrouter.ai/api/v1",
+            "OPENROUTER_API_KEY": "k",
+        }
+        with mock.patch.dict(os.environ, env, clear=False):
+            ens = default_judge_ensemble()
+        self.assertEqual([j["model"] for j in ens], ["a/x", "b/y", "c/z"])
+        self.assertTrue(all(j["api_base"].endswith("/api/v1") for j in ens))
+        self.assertTrue(all(j["api_key"] == "k" for j in ens))
+
+    def test_falls_back_to_single_judge_without_key(self):
+        env = {
+            "JUDGE_MODELS": "a/x,b/y",
+            "OPENROUTER_API_KEY": "",
+            "JUDGE_ENSEMBLE_API_KEY": "",
+            "JUDGE_MODEL_NAME": "solo",
+            "JUDGE_API_BASE": "https://api.openai.com/v1",
+            "JUDGE_API_KEY": "sk",
+        }
+        with mock.patch.dict(os.environ, env, clear=False), \
+                mock.patch("evaluation.score.JUDGE_MODEL_NAME", "solo"):
+            ens = default_judge_ensemble()
+        self.assertEqual(len(ens), 1)
+        self.assertEqual(ens[0]["model"], "solo")
+
+    def test_slug_is_filesystem_safe(self):
+        self.assertEqual(_judge_slug("anthropic/claude-sonnet-4.6"),
+                         "anthropic-claude-sonnet-4-6")

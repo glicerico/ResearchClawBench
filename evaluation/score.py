@@ -28,6 +28,7 @@ import base64
 import json
 import os
 import re
+import statistics
 from pathlib import Path
 from typing import Optional
 
@@ -48,6 +49,15 @@ MAX_REPORT_CHARS = 40000
 MAX_CODE_CHARS = 16000
 MAX_OUTPUTS_CHARS = 12000
 MAX_TRAJECTORY_CHARS = 30000
+
+# --- judge output-token budgets ----------------------------------------------
+# These must be generous enough for *reasoning* judge models (e.g. gpt-5.5,
+# gemini-3.1-pro): their internal reasoning tokens count against max_tokens, so a
+# tight cap truncates the JSON before the answer is emitted (finish_reason
+# "length") and parsing falls back to 0. The visible JSON is small; the headroom
+# is for the model's thinking.
+FIDELITY_MAX_TOKENS = 2000   # per checklist item: a one-line JSON verdict
+RESEARCH_MAX_TOKENS = 6000   # one holistic call: nested JSON over all dimensions
 MAX_TOOL_RESULT_CHARS = 220
 
 # --- research-axis stages ----------------------------------------------------
@@ -316,6 +326,9 @@ def _distill_trajectory(workspace: Path) -> str:
             try:
                 d = json.loads(raw)
             except json.JSONDecodeError:
+                continue
+            if not isinstance(d, dict):
+                # Some agents (e.g. Codex CLI) emit bare scalars/arrays per line.
                 continue
             t = d.get("type")
             if t == "assistant":
@@ -711,7 +724,8 @@ def score_workspace(
 
     # --- paper fidelity: one call per checklist item (report + images) ---
     fidelity_agent = _make_agent(
-        max_tokens=500, model=judge_model, api_base=judge_api_base, api_key=judge_api_key
+        max_tokens=FIDELITY_MAX_TOKENS, model=judge_model,
+        api_base=judge_api_base, api_key=judge_api_key
     )
 
     def score_item(index, item_data):
@@ -731,7 +745,8 @@ def score_workspace(
     # --- scientific capability: one holistic call over static artifacts ---
     artifacts = _gather_research_artifacts(workspace)
     research_agent = _make_agent(
-        max_tokens=2600, model=judge_model, api_base=judge_api_base, api_key=judge_api_key
+        max_tokens=RESEARCH_MAX_TOKENS, model=judge_model,
+        api_base=judge_api_base, api_key=judge_api_key
     )
     research_result = _score_research(research_agent, report_text, instructions,
                                       checklist, artifacts)
@@ -752,9 +767,167 @@ def score_workspace(
     return score_data
 
 
+# --- multi-judge ensemble -----------------------------------------------------
+#
+# Scoring one fixed research run with several judge models (and aggregating per
+# axis) measures *judge* agreement/disagreement on the same artifact. This is the
+# default for the dashboard "Score" button; the CLI reaches the same aggregation
+# through these helpers. It is orthogonal to ``repeats`` (which re-runs research).
+
+DEFAULT_JUDGE_ENSEMBLE_BASE = "https://openrouter.ai/api/v1"
+
+
+def _judge_slug(model: str, fallback: str = "judge") -> str:
+    """Filesystem-safe slug for a judge model name (for per-judge score files)."""
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", model or "").strip("-").lower()
+    return slug or fallback
+
+
+def agg_stat(values: list[float]) -> tuple[Optional[float], Optional[float]]:
+    """Mean and population std of the per-judge values for one axis."""
+    if not values:
+        return None, None
+    mean = round(sum(values) / len(values), 2)
+    std = round(statistics.pstdev(values), 2) if len(values) > 1 else 0.0
+    return mean, std
+
+
+def aggregate_judges(per_judge: list[dict]) -> dict:
+    """Combine N per-judge score dicts into one aggregate (mean + per-axis std).
+
+    Headline scores are the mean across judges; each axis also carries its own
+    standard deviation (inter-judge spread / disagreement). The first judge's
+    per-item/per-dimension detail is preserved so the run-detail UI still renders.
+    """
+    def axis(key: str) -> list[float]:
+        return [float(d[key]) for d in per_judge if d.get(key) is not None]
+
+    total_mean, total_std = agg_stat(axis("total_score"))
+    sci_mean, sci_std = agg_stat(axis("scientific_capability_score"))
+    fid_mean, fid_std = agg_stat(axis("paper_fidelity_score"))
+
+    aggregate = dict(per_judge[0])  # keep run_id/task_id/items/research_dimensions
+    aggregate.pop("judge_model", None)  # singular doesn't apply to an ensemble
+    aggregate.update({
+        "judges": len(per_judge),
+        "judge_models": [d.get("judge_model") for d in per_judge],
+        "aggregation": "mean_across_judges",
+        "total_score": total_mean,
+        "scientific_capability_score": sci_mean,
+        "paper_fidelity_score": fid_mean,
+        "total_score_std": total_std,
+        "scientific_capability_score_std": sci_std,
+        "paper_fidelity_score_std": fid_std,
+        "per_judge": [
+            {
+                "judge_model": d.get("judge_model"),
+                "total_score": d.get("total_score"),
+                "scientific_capability_score": d.get("scientific_capability_score"),
+                "paper_fidelity_score": d.get("paper_fidelity_score"),
+            }
+            for d in per_judge
+        ],
+    })
+    return aggregate
+
+
+def default_judge_ensemble() -> list[dict]:
+    """Resolve the default judge ensemble for the dashboard from the environment.
+
+    Returns a list of ``{model, api_base, api_key}`` dicts. When ``JUDGE_MODELS``
+    (comma-separated slugs) is set and a shared key is available, those judges run
+    over a shared OpenRouter-style base. Otherwise this falls back to the single
+    legacy judge (``JUDGE_MODEL_NAME`` + ``JUDGE_API_BASE``/``JUDGE_API_KEY``), so
+    existing single-judge setups keep working unchanged.
+    """
+    models_raw = os.environ.get("JUDGE_MODELS", "").strip()
+    if models_raw:
+        models = [m.strip() for m in models_raw.split(",") if m.strip()]
+        base = (
+            os.environ.get("JUDGE_ENSEMBLE_API_BASE")
+            or os.environ.get("OPENROUTER_API_BASE")
+            or DEFAULT_JUDGE_ENSEMBLE_BASE
+        )
+        key = (
+            os.environ.get("JUDGE_ENSEMBLE_API_KEY")
+            or os.environ.get("OPENROUTER_API_KEY", "")
+        )
+        if models and base and key:
+            return [{"model": m, "api_base": base, "api_key": key} for m in models]
+    return [{
+        "model": JUDGE_MODEL_NAME,
+        "api_base": os.environ.get("JUDGE_API_BASE", ""),
+        "api_key": os.environ.get("JUDGE_API_KEY", ""),
+    }]
+
+
+def score_workspace_ensemble(workspace: str | Path, judges: Optional[list[dict]] = None) -> dict:
+    """Score one workspace with a set of judges and write an aggregate ``_score.json``.
+
+    ``judges`` is a list of ``{model, api_base, api_key}`` dicts; when omitted the
+    default ensemble (see :func:`default_judge_ensemble`) is used. A single judge
+    writes ``_score.json`` directly (legacy shape). Multiple judges each write a
+    ``_score_<slug>.json`` and the mean+std aggregate is written to ``_score.json``.
+    """
+    workspace = Path(workspace)
+    if judges is None:
+        judges = default_judge_ensemble()
+    enabled = [j for j in judges if j.get("model") and j.get("api_base") and j.get("api_key")]
+    if not enabled:
+        return {
+            "error": (
+                "Judge API configuration is missing. Set JUDGE_MODELS + "
+                "OPENROUTER_API_KEY (ensemble) or JUDGE_MODEL_NAME + JUDGE_API_KEY "
+                "+ JUDGE_API_BASE (single judge) in evaluation/.env."
+            )
+        }
+
+    if len(enabled) == 1:
+        j = enabled[0]
+        return score_workspace(
+            workspace, model=j["model"], api_base=j["api_base"], api_key=j["api_key"]
+        )
+
+    per_judge: list[dict] = []
+    errors: list[str] = []
+    used_slugs: dict[str, int] = {}
+    for j in enabled:
+        slug = _judge_slug(j["model"])
+        used_slugs[slug] = used_slugs.get(slug, 0) + 1
+        if used_slugs[slug] > 1:
+            slug = f"{slug}-{used_slugs[slug]}"
+        try:
+            data = score_workspace(
+                workspace, model=j["model"], api_base=j["api_base"], api_key=j["api_key"],
+                out_name=f"_score_{slug}.json",
+            )
+        except Exception as exc:  # noqa: BLE001 - record and continue with other judges
+            errors.append(f"{j['model']}: {type(exc).__name__}: {exc}")
+            continue
+        if not isinstance(data, dict) or data.get("error"):
+            detail = data.get("error") if isinstance(data, dict) else "non-dict result"
+            errors.append(f"{j['model']}: {detail}")
+        else:
+            per_judge.append(data)
+
+    if not per_judge:
+        return {"error": "; ".join(errors) or "All judges failed."}
+
+    aggregate = aggregate_judges(per_judge)
+    if errors:
+        aggregate["judge_errors"] = errors
+    with open(workspace / "_score.json", "w", encoding="utf-8") as f:
+        json.dump(aggregate, f, indent=2)
+    return aggregate
+
+
 def score_run(run_id: str) -> dict:
-    """Score a completed run by resolving its workspace from the run ID."""
+    """Score a completed run by resolving its workspace from the run ID.
+
+    Uses the default judge ensemble (multiple judges when configured), so the
+    dashboard "Score" button produces per-axis means + inter-judge spread.
+    """
     workspace = get_run_workspace(run_id)
     if not workspace:
         return {"error": "Workspace not found"}
-    return score_workspace(workspace)
+    return score_workspace_ensemble(workspace)

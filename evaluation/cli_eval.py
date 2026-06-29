@@ -662,54 +662,6 @@ def _write_meta(runner: TaskRunner, status: str, extra: dict[str, Any]) -> None:
     runner._write_meta(status, extra)
 
 
-def _agg_stat(values: list[float]) -> tuple[float | None, float | None]:
-    """Mean and population std of the per-judge values for one axis."""
-    if not values:
-        return None, None
-    mean = round(sum(values) / len(values), 2)
-    std = round(statistics.pstdev(values), 2) if len(values) > 1 else 0.0
-    return mean, std
-
-
-def _aggregate_judges(per_judge: list[dict[str, Any]]) -> dict[str, Any]:
-    """Combine N per-judge score dicts into one aggregate (mean + per-axis std).
-
-    Headline scores are the mean across judges; each axis also carries its own
-    standard deviation (inter-judge spread / disagreement). The first judge's
-    per-item/per-dimension detail is preserved so the run-detail UI still renders.
-    """
-    def axis(key: str) -> list[float]:
-        return [float(d[key]) for d in per_judge if d.get(key) is not None]
-
-    total_mean, total_std = _agg_stat(axis("total_score"))
-    sci_mean, sci_std = _agg_stat(axis("scientific_capability_score"))
-    fid_mean, fid_std = _agg_stat(axis("paper_fidelity_score"))
-
-    aggregate = dict(per_judge[0])  # keep run_id/task_id/items/research_dimensions for detail view
-    aggregate.pop("judge_model", None)  # singular doesn't apply to an ensemble
-    aggregate.update({
-        "judges": len(per_judge),
-        "judge_models": [d.get("judge_model") for d in per_judge],
-        "aggregation": "mean_across_judges",
-        "total_score": total_mean,
-        "scientific_capability_score": sci_mean,
-        "paper_fidelity_score": fid_mean,
-        "total_score_std": total_std,
-        "scientific_capability_score_std": sci_std,
-        "paper_fidelity_score_std": fid_std,
-        "per_judge": [
-            {
-                "judge_model": d.get("judge_model"),
-                "total_score": d.get("total_score"),
-                "scientific_capability_score": d.get("scientific_capability_score"),
-                "paper_fidelity_score": d.get("paper_fidelity_score"),
-            }
-            for d in per_judge
-        ],
-    })
-    return aggregate
-
-
 def _score_completed_run(
     workspace: Path, scorers: ScorerConfig | list[ScorerConfig]
 ) -> tuple[float | None, dict[str, Any] | None, str]:
@@ -755,7 +707,7 @@ def _score_completed_run(
     if not per_judge:
         return None, None, "; ".join(errors) or "All judges failed."
 
-    aggregate = _aggregate_judges(per_judge)
+    aggregate = score_module.aggregate_judges(per_judge)
     with open(workspace / "_score.json", "w", encoding="utf-8") as f:
         json.dump(aggregate, f, indent=2)
     total = aggregate.get("total_score")

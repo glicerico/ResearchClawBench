@@ -24,7 +24,7 @@ const API = '';
     for (var r = 0; r < rows; r++) {
       for (var c = 0; c < cols; c++) {
         var wave = 0.6 * Math.sin(c * 0.21 + t * 0.36) * Math.sin(r * 0.17 + t * 0.28)
-                 + 0.4 * Math.sin(c * 0.11 - r * 0.13 + t * 0.19);
+          + 0.4 * Math.sin(c * 0.11 - r * 0.13 + t * 0.19);
         var v = ((wave + 1) * 0.5); v = v * v * v;
         var a = Math.round((0.004 + v * 0.186) * 100) / 100;
         if (a < 0.02) continue;
@@ -71,12 +71,12 @@ const API = '';
   function apply(theme) {
     if (theme === 'white') document.documentElement.removeAttribute('data-theme');
     else document.documentElement.setAttribute('data-theme', theme);
-    try { localStorage.setItem('site-theme', theme); } catch (e) {}
+    try { localStorage.setItem('site-theme', theme); } catch (e) { }
     document.querySelectorAll('.theme-dot').forEach(d => d.classList.toggle('active', d.dataset.theme === theme));
   }
 
   var saved = 'white';
-  try { saved = localStorage.getItem('site-theme') || 'white'; } catch (e) {}
+  try { saved = localStorage.getItem('site-theme') || 'white'; } catch (e) { }
   apply(saved);
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -154,7 +154,7 @@ function selectAgent(key) {
 
 /* ── Dashboard: Frontier Chart + Leaderboard ────────────────────────── */
 let frontierChart = null;
-const AGENT_COLORS = ['#3b82f6','#ef4444','#22c55e','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f97316'];
+const AGENT_COLORS = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
 async function loadDashboard() {
   try {
@@ -426,7 +426,7 @@ function renderFrontierChart(data) {
             maxRotation: 0,
             minRotation: 0,
             autoSkip: false,
-            callback: function(value, index) {
+            callback: function (value, index) {
               // Show domain name at midpoint of each 4-task group
               if (index % 4 === 1) return domainLabels[index];
               return '';
@@ -880,7 +880,7 @@ async function selectTask(taskId) {
           <div><span class="score-item-type ${item.type}">${item.type}</span><span class="score-item-weight">Weight: ${item.weight}</span></div>
           <div class="checklist-score-slot" id="checklist-score-${i}"></div>
         </div>
-        <p class="checklist-text${item.content&&item.content.length>200?' truncated':''}">${esc(item.content||'')}</p>${item.content&&item.content.length>200?'<button class="checklist-toggle" onclick="const p=this.previousElementSibling;p.classList.toggle(\'truncated\');this.textContent=p.classList.contains(\'truncated\')?\'show more\':\'show less\'">show more</button>':''}
+        <p class="checklist-text${item.content && item.content.length > 200 ? ' truncated' : ''}">${esc(item.content || '')}</p>${item.content && item.content.length > 200 ? '<button class="checklist-toggle" onclick="const p=this.previousElementSibling;p.classList.toggle(\'truncated\');this.textContent=p.classList.contains(\'truncated\')?\'show more\':\'show less\'">show more</button>' : ''}
         ${imgHtml}
       </div>`;
     }).join('');
@@ -966,9 +966,9 @@ async function loadRuns(taskId) {
   let runs;
   if (STATIC_MODE) {
     if (!state._runsIndex) state._runsIndex = await fetchStaticJSON('data/runs_index.json') || [];
-    runs = state._runsIndex.filter(r => !taskId || r.task_id === taskId).sort((a,b) => (b.timestamp||'').localeCompare(a.timestamp||''));
+    runs = state._runsIndex.filter(r => !taskId || r.task_id === taskId).sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
   } else {
-    runs = await (await fetch(`${API}/api/runs?task_id=${taskId||''}`)).json();
+    runs = await (await fetch(`${API}/api/runs?task_id=${taskId || ''}`)).json();
   }
   if (taskId && state.currentTaskId !== taskId) return null;
   const div = document.getElementById('run-history');
@@ -978,14 +978,14 @@ async function loadRuns(taskId) {
   }
   div.innerHTML = runs.map(r => {
     const ts = r.timestamp || '';
-    const fmt = ts.length >= 15 ? `${ts.slice(0,4)}-${ts.slice(4,6)}-${ts.slice(6,8)} ${ts.slice(9,11)}:${ts.slice(11,13)}` : ts;
+    const fmt = ts.length >= 15 ? `${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)} ${ts.slice(9, 11)}:${ts.slice(11, 13)}` : ts;
     const agentLabel = r.agent_name || 'Agent';
     const modelLabel = r.model_display || r.model;
     const modelStr = modelLabel ? `<span class="run-item-model">${esc(modelLabel)}</span>` : '';
     const fullRunLabel = modelLabel ? `${agentLabel} ${modelLabel}` : agentLabel;
     const detailsMarker = STATIC_MODE ? runDetailsMarkerHtml(getRunDetailsState(r), 'run-detail-marker') : '';
     return `
-    <div class="run-item ${r.run_id===state.currentRunId?'active':''}" data-run-id="${r.run_id}">
+    <div class="run-item ${r.run_id === state.currentRunId ? 'active' : ''}" data-run-id="${r.run_id}">
       <span class="status-dot ${r.status}"></span>
       ${detailsMarker}
       <div class="run-item-info" onclick="selectRun('${r.run_id}')">
@@ -1119,8 +1119,8 @@ async function selectRun(runId, options = {}) {
       if (meta.timestamp) {
         const ts = meta.timestamp;
         const startDate = new Date(
-          parseInt(ts.slice(0,4)), parseInt(ts.slice(4,6))-1, parseInt(ts.slice(6,8)),
-          parseInt(ts.slice(9,11)), parseInt(ts.slice(11,13)), parseInt(ts.slice(13,15))
+          parseInt(ts.slice(0, 4)), parseInt(ts.slice(4, 6)) - 1, parseInt(ts.slice(6, 8)),
+          parseInt(ts.slice(9, 11)), parseInt(ts.slice(11, 13)), parseInt(ts.slice(13, 15))
         );
         elapsed = Math.max(0, Math.floor((Date.now() - startDate.getTime()) / 1000));
       }
@@ -1155,7 +1155,7 @@ async function autoOpenLatestFile(runId, files) {
       if (!latest || (f.mtime && f.mtime > (latest.mtime || 0))) latest = f;
     }
     if (latest) loadFile(runId, latest.path, latest.name, null, true);
-  } catch (_) {}
+  } catch (_) { }
 }
 
 async function loadSavedOutput(runId) {
@@ -1197,7 +1197,7 @@ async function startRun() {
   const btn = document.getElementById('btn-start-run');
   btn.disabled = true; btn.innerHTML = '<span class="btn-icon">&#9654;</span> Starting...';
   try {
-    const data = await (await fetch(`${API}/api/runs`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })).json();
+    const data = await (await fetch(`${API}/api/runs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
     if (state.currentTaskId !== taskId || state.selectedAgent !== agent) return;
     invalidateFileRender();
     state.currentRunId = data.run_id;
@@ -1256,7 +1256,7 @@ function onStreamEnd(status, runId) {
       const meta = await (await fetch(`${API}/api/runs/${runId}/meta`)).json();
       if (state.currentRunId !== runId) return;
       if (meta.duration_seconds != null) showDuration(meta.duration_seconds);
-    } catch (_) {}
+    } catch (_) { }
   }, 1500);
 }
 
@@ -1265,7 +1265,7 @@ async function stopRun() {
   { const _el = document.getElementById('btn-stop-run'); if (_el) _el.textContent = 'Stopping...'; }
   try {
     await fetch(`${API}/api/runs/${state.currentRunId}/stop`, { method: 'POST' });
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function startAutoTrack(runId) {
@@ -1296,7 +1296,7 @@ function startAutoTrack(runId) {
           loadFile(runId, latest.path, latest.name, null, true);
         }
       }
-    } catch (_) {}
+    } catch (_) { }
   }, 3000);
 }
 
@@ -1419,6 +1419,9 @@ function appendMsg(d) {
     // Fallback for unknown types — only show if there's plain text content
     if (typeof d.content === 'string' && d.content.trim()) {
       addBubble('chat-bubble-ai', '', esc(d.content.substring(0, 500)));
+    } else {
+      const raw = JSON.stringify(d, null, 2);
+      addBubble('chat-bubble-ai', 'log', `<pre style="margin:0;white-space:pre-wrap;font-family:monospace;font-size:0.9em">${esc(raw).substring(0, 2000)}</pre>`);
     }
   }
 
@@ -1476,7 +1479,7 @@ function renderStaticTaskFileTree(files, taskId) {
     }
     const depth = (f.path.match(/\//g) || []).length;
     const item = document.createElement('div');
-    item.className = `file-tree-item ${f.type==='directory'?'dir':''}`;
+    item.className = `file-tree-item ${f.type === 'directory' ? 'dir' : ''}`;
     item.style.paddingLeft = `${6 + depth * 14}px`;
     if (f.type === 'directory') {
       const truncLabel = f.truncated ? ' <span class="tree-truncated-badge">…</span>' : '';
@@ -1575,7 +1578,7 @@ function renderFileTree(files, runId, taskId) {
     }
     const depth = (f.path.match(/\//g) || []).length;
     const item = document.createElement('div');
-    item.className = `file-tree-item ${f.type==='directory'?'dir':''}`;
+    item.className = `file-tree-item ${f.type === 'directory' ? 'dir' : ''}`;
     item.style.paddingLeft = `${6 + depth * 14}px`;
     if (f.type === 'directory') {
       const truncLabel = f.truncated ? ' <span class="tree-truncated-badge">…</span>' : '';
@@ -1762,10 +1765,10 @@ async function renderFileContent(path, name, url, evt, baseUrl, filePath) {
         div.innerHTML = `<div class="file-md-render">${html}</div>${truncNote}`;
         enhanceRenderedMarkdown(div.querySelector('.file-md-render'));
       } else {
-        const langMap = {py:'python',js:'javascript',json:'json',sh:'bash',yml:'yaml',yaml:'yaml',txt:null,csv:null,mat:null};
+        const langMap = { py: 'python', js: 'javascript', json: 'json', sh: 'bash', yml: 'yaml', yaml: 'yaml', txt: null, csv: null, mat: null };
         const lang = langMap[ext];
         if (lang && typeof hljs !== 'undefined') {
-          div.innerHTML = `<pre class="file-code-block"><code>${hljs.highlight(text,{language:lang,ignoreIllegals:true}).value}</code></pre>${truncNote}`;
+          div.innerHTML = `<pre class="file-code-block"><code>${hljs.highlight(text, { language: lang, ignoreIllegals: true }).value}</code></pre>${truncNote}`;
         } else {
           div.innerHTML = `<pre class="file-code-block"><code>${esc(text)}</code></pre>${truncNote}`;
         }
@@ -1775,11 +1778,11 @@ async function renderFileContent(path, name, url, evt, baseUrl, filePath) {
 }
 
 // File types that can be displayed in the viewer
-const VIEWABLE_TEXT_EXTS = new Set(['txt','md','py','js','json','jsonl','yml','yaml','sh','bash','r','R','html','css','xml','ini','cfg','conf','toml','log','tex','bib','sql','c','cpp','h','java','go','rs','jl','m','ipynb']);
-const VIEWABLE_IMG_EXTS = new Set(['png','jpg','jpeg','gif','bmp','webp','svg']);
+const VIEWABLE_TEXT_EXTS = new Set(['txt', 'md', 'py', 'js', 'json', 'jsonl', 'yml', 'yaml', 'sh', 'bash', 'r', 'R', 'html', 'css', 'xml', 'ini', 'cfg', 'conf', 'toml', 'log', 'tex', 'bib', 'sql', 'c', 'cpp', 'h', 'java', 'go', 'rs', 'jl', 'm', 'ipynb']);
+const VIEWABLE_IMG_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg']);
 const VIEWABLE_EMBED_EXTS = new Set(['pdf']);
-const VIEWABLE_TABLE_EXTS = new Set(['xlsx','xls']);
-const VIEWABLE_CSV_EXTS = new Set(['csv','tsv','dat']);
+const VIEWABLE_TABLE_EXTS = new Set(['xlsx', 'xls']);
+const VIEWABLE_CSV_EXTS = new Set(['csv', 'tsv', 'dat']);
 
 function isAgentOutput(path) {
   // Only consider files that could be agent-generated for auto-open/follow
@@ -1794,7 +1797,7 @@ function isViewableFile(name) {
 
 function fileIcon(n) {
   const ext = n.split('.').pop().toLowerCase();
-  const m = {py:'&#128013;',js:'&#9881;',json:'{}',md:'&#9998;',png:'&#128444;',jpg:'&#128444;',jpeg:'&#128444;',gif:'&#128444;',csv:'&#128202;',xlsx:'&#128202;',pdf:'&#128214;',mat:'&#128202;',npy:'&#128202;',txt:'&#128196;'};
+  const m = { py: '&#128013;', js: '&#9881;', json: '{}', md: '&#9998;', png: '&#128444;', jpg: '&#128444;', jpeg: '&#128444;', gif: '&#128444;', csv: '&#128202;', xlsx: '&#128202;', pdf: '&#128214;', mat: '&#128202;', npy: '&#128202;', txt: '&#128196;' };
   return m[ext] || '&#128196;';
 }
 
@@ -1878,7 +1881,7 @@ async function triggerScoring() {
             setScoreButtonState(true);
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     }, 3000);
   } catch (e) {
     document.getElementById('score-total-area').innerHTML = `<p style="color:var(--err)">Failed: ${esc(e.message)}</p>`;
@@ -1911,8 +1914,8 @@ function renderScore(s) {
     const offset = circ * (1 - pct);
     const color = score >= 50 ? '#22c55e' : score >= 25 ? '#eab308' : '#ef4444';
     return `<svg class="score-ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-      <circle class="score-ring-bg" cx="${size/2}" cy="${size/2}" r="${r}"/>
-      <circle class="score-ring-fill" cx="${size/2}" cy="${size/2}" r="${r}" stroke="${color}" stroke-dasharray="${circ}" stroke-dashoffset="${offset}"/>
+      <circle class="score-ring-bg" cx="${size / 2}" cy="${size / 2}" r="${r}"/>
+      <circle class="score-ring-fill" cx="${size / 2}" cy="${size / 2}" r="${r}" stroke="${color}" stroke-dasharray="${circ}" stroke-dashoffset="${offset}"/>
     </svg>`;
   }
 
@@ -2055,7 +2058,7 @@ function toggleFileFollow() {
           if (!latest || (f.mtime && f.mtime > (latest.mtime || 0))) latest = f;
         }
         if (latest) loadFile(state.currentRunId, latest.path, latest.name, null, true);
-      } catch (_) {}
+      } catch (_) { }
     })();
   } else if (state.currentTaskId) {
     // No run — fallback to INSTRUCTIONS.md
@@ -2234,15 +2237,15 @@ function typesetMath(root) {
   try {
     renderMathInElement(root, {
       delimiters: [
-        {left: '$$', right: '$$', display: true},
-        {left: '\\[', right: '\\]', display: true},
-        {left: '$', right: '$', display: false},
-        {left: '\\(', right: '\\)', display: false},
+        { left: '$$', right: '$$', display: true },
+        { left: '\\[', right: '\\]', display: true },
+        { left: '$', right: '$', display: false },
+        { left: '\\(', right: '\\)', display: false },
       ],
       ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
       throwOnError: false,
     });
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function renderMermaidCharts(root) {
@@ -2272,7 +2275,7 @@ function renderMermaidCharts(root) {
         pre.dataset.mermaidRendered = '0';
       });
     });
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function getAgentBaseLabel(name) {
@@ -2377,7 +2380,7 @@ function formatDuration(seconds) {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
-  return `${String(h).padStart(2,'0')}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`;
+  return `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
 }
 
 function formatLeaderboardDuration(seconds) {
