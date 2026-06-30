@@ -6,6 +6,7 @@ import os
 import re
 import threading
 import time
+from collections import defaultdict
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -576,8 +577,11 @@ def api_leaderboard():
       frontier: {task_id: max_score_or_null, ...}
     """
     all_runs = list_runs()
-    # For each (task, agent), keep only the best scored run.
-    best = {}  # (task_id, agent_name) -> leaderboard cell metadata
+
+    # Collect every scored run first, then assign a per-(agent, task) run ordinal
+    # so repeated runs of the same canonical agent become separate, auto-labeled
+    # series ("Agent (run N)") instead of collapsing to a single best-of cell.
+    scored = []  # list of {task_id, base_agent, variant, timestamp, entry}
     for run in all_runs:
         ws = get_run_workspace(run["run_id"])
         if not ws:
@@ -591,28 +595,56 @@ def api_leaderboard():
         except (json.JSONDecodeError, OSError):
             continue
 
-        task_id = run["task_id"]
-        agent = score_data.get("agent_name", run.get("agent_name", "Unknown"))
-        total = score_data.get("total_score", 0)
-        entry = {
-            "score": total,
-            # dual subscores (present for new score files; None for legacy ones)
-            "scientific_capability_score": score_data.get("scientific_capability_score"),
-            "paper_fidelity_score": score_data.get("paper_fidelity_score"),
-            # inter-judge spread (present only for multi-judge ensemble score files)
-            "total_score_std": score_data.get("total_score_std"),
-            "scientific_capability_score_std": score_data.get("scientific_capability_score_std"),
-            "paper_fidelity_score_std": score_data.get("paper_fidelity_score_std"),
-            "judges": score_data.get("judges"),
-            "judge_models": score_data.get("judge_models"),
-            "per_judge": score_data.get("per_judge"),
-            "run_id": run["run_id"],
-            "duration_seconds": run.get("duration_seconds"),
-            "model": run.get("model", ""),
-        }
-        key = (task_id, agent)
-        if key not in best or total > best[key]["score"]:
-            best[key] = entry
+        scored.append({
+            "task_id": run["task_id"],
+            "base_agent": score_data.get("agent_name", run.get("agent_name", "Unknown")),
+            # Optional explicit run label; overrides the auto ordinal when set.
+            "variant": score_data.get("variant") or run.get("variant") or "",
+            "timestamp": run.get("timestamp") or run["run_id"],
+            "entry": {
+                "score": score_data.get("total_score", 0),
+                # dual subscores (present for new score files; None for legacy ones)
+                "scientific_capability_score": score_data.get("scientific_capability_score"),
+                "paper_fidelity_score": score_data.get("paper_fidelity_score"),
+                # inter-judge spread (present only for multi-judge ensemble score files)
+                "total_score_std": score_data.get("total_score_std"),
+                "scientific_capability_score_std": score_data.get("scientific_capability_score_std"),
+                "paper_fidelity_score_std": score_data.get("paper_fidelity_score_std"),
+                "judges": score_data.get("judges"),
+                "judge_models": score_data.get("judge_models"),
+                "per_judge": score_data.get("per_judge"),
+                "run_id": run["run_id"],
+                "duration_seconds": run.get("duration_seconds"),
+                "model": run.get("model", ""),
+            },
+        })
+
+    # Assign run ordinals within each (base_agent, task_id), ordered by timestamp,
+    # and compose the dashboard series key. A single run keeps the plain agent name
+    # (no "(run 1)" noise); repeats become "Agent (run N)"; an explicit variant
+    # overrides the ordinal. app.js parses "Base (variant)" for legend/family grouping.
+    groups = defaultdict(list)
+    for item in scored:
+        groups[(item["base_agent"], item["task_id"])].append(item)
+    for group in groups.values():
+        group.sort(key=lambda it: it["timestamp"])
+        multi = len(group) > 1
+        for ordinal, item in enumerate(group, 1):
+            base = item["base_agent"]
+            if item["variant"]:
+                item["series_key"] = f"{base} ({item['variant']})"
+            elif multi:
+                item["series_key"] = f"{base} (run {ordinal})"
+            else:
+                item["series_key"] = base
+
+    # For each (task, series_key) keep the best score (each is unique in practice;
+    # the guard is defensive against duplicate timestamps).
+    best = {}  # (task_id, series_key) -> leaderboard cell metadata
+    for item in scored:
+        key = (item["task_id"], item["series_key"])
+        if key not in best or item["entry"]["score"] > best[key]["score"]:
+            best[key] = item["entry"]
 
     # Build structured response
     tasks_set = set()
