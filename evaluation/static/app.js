@@ -287,18 +287,6 @@ function renderFrontierChart(data) {
     spanGaps: true,
   });
 
-  // Human Level baseline at 50
-  datasets.push({
-    label: 'Human Level (50)',
-    data: labels.map(() => 50),
-    borderColor: 'rgba(239,68,68,0.45)',
-    borderWidth: 1.5,
-    borderDash: [4, 4],
-    pointRadius: 0,
-    fill: false,
-    tension: 0,
-    order: 100,
-  });
 
   const style = getComputedStyle(document.documentElement);
   const textColor = style.getPropertyValue('--text-tertiary').trim() || '#a1a1aa';
@@ -405,15 +393,52 @@ function renderFrontierChart(data) {
         legend: { display: false },
         tooltip: {
           backgroundColor: 'rgba(0,0,0,0.85)',
-          titleFont: { family: "'DM Sans', sans-serif", size: 17 },
+          titleFont: { family: "'DM Sans', sans-serif", size: 17, weight: 'bold' },
           bodyFont: { family: "'Fira Code', monospace", size: 16 },
+          displayColors: true,
           callbacks: {
             title: (items) => labels[items[0].dataIndex] || '',
-            label: c2 => {
-              const v = c2.parsed.y;
-              const s = Array.isArray(c2.dataset.sigma) ? c2.dataset.sigma[c2.dataIndex] : null;
-              const base = `${getAgentDisplayLabel(data, c2.dataset.label)}: ${v !== null ? v.toFixed(1) : '-'}`;
-              return Number.isFinite(s) && s > 0 ? `${base} ± ${s.toFixed(1)}` : base;
+            filter: (item, chart) => {
+              // Skip Frontier and Human Level in tooltip
+              if (item.dataset.label === 'Frontier' || item.dataset.label.startsWith('Human')) return false;
+              return true;
+            },
+            label: (context) => {
+              // Collect all visible agents at this index
+              const dataIndex = context.dataIndex;
+              const chart = context.chart;
+              const allItems = [];
+
+              for (let i = 0; i < chart.data.datasets.length; i++) {
+                const ds = chart.data.datasets[i];
+                if (ds.label === 'Frontier' || ds.label.startsWith('Human')) continue;
+
+                const v = ds.data[dataIndex];
+                if (v == null) continue;
+
+                allItems.push({
+                  datasetIndex: i,
+                  label: ds.label,
+                  value: v,
+                  sigma: Array.isArray(ds.sigma) ? ds.sigma[dataIndex] : null,
+                });
+              }
+
+              // Sort by value descending
+              allItems.sort((a, b) => {
+                const av = Number.isFinite(a.value) ? a.value : -Infinity;
+                const bv = Number.isFinite(b.value) ? b.value : -Infinity;
+                return bv - av;
+              });
+
+              // Find current item in sorted list
+              const sortedIndex = allItems.findIndex(item => item.datasetIndex === context.datasetIndex);
+              if (sortedIndex === -1) return '';
+
+              // Show this item with its sorted-order content
+              const item = allItems[sortedIndex];
+              const base = `${getAgentDisplayLabel(data, item.label)}: ${item.value !== null ? item.value.toFixed(1) : '-'}`;
+              return Number.isFinite(item.sigma) && item.sigma > 0 ? `${base} ± ${item.sigma.toFixed(1)}` : base;
             },
           },
         },
@@ -452,9 +477,6 @@ function renderFrontierChart(data) {
     const logo = getAgentLogo(ds.label);
     const logoHtml = logo ? `<img src="${logo}" alt="">` : '';
     if (ds.label === 'Frontier') {
-      return `<div class="chart-legend-item"><span class="chart-legend-swatch dashed" style="border-color:${ds.borderColor}"></span>${ds.label}</div>`;
-    }
-    if (ds.label.startsWith('Human')) {
       return `<div class="chart-legend-item"><span class="chart-legend-swatch dashed" style="border-color:${ds.borderColor}"></span>${ds.label}</div>`;
     }
     const displayLabel = getAgentDisplayLabel(data, ds.label);
