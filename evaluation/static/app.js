@@ -392,54 +392,83 @@ function renderFrontierChart(data) {
       plugins: {
         legend: { display: false },
         tooltip: {
+          enabled: false,
           backgroundColor: 'rgba(0,0,0,0.85)',
           titleFont: { family: "'DM Sans', sans-serif", size: 17, weight: 'bold' },
           bodyFont: { family: "'Fira Code', monospace", size: 16 },
           displayColors: true,
-          callbacks: {
-            title: (items) => labels[items[0].dataIndex] || '',
-            filter: (item, chart) => {
-              // Skip Frontier and Human Level in tooltip
-              if (item.dataset.label === 'Frontier' || item.dataset.label.startsWith('Human')) return false;
-              return true;
-            },
-            label: (context) => {
-              // Collect all visible agents at this index
-              const dataIndex = context.dataIndex;
-              const chart = context.chart;
-              const allItems = [];
+          external: function(context) {
+            const {chart, tooltip} = context;
+            const idx = tooltip.dataPoints[0]?.dataIndex;
+            if (idx == null) return;
 
-              for (let i = 0; i < chart.data.datasets.length; i++) {
-                const ds = chart.data.datasets[i];
-                if (ds.label === 'Frontier' || ds.label.startsWith('Human')) continue;
+            // Collect all agent items
+            const allItems = [];
+            const colorMap = {};
 
-                const v = ds.data[dataIndex];
-                if (v == null) continue;
+            for (let i = 0; i < chart.data.datasets.length; i++) {
+              const ds = chart.data.datasets[i];
+              if (ds.label === 'Frontier' || ds.label.startsWith('Human')) continue;
 
-                allItems.push({
-                  datasetIndex: i,
-                  label: ds.label,
-                  value: v,
-                  sigma: Array.isArray(ds.sigma) ? ds.sigma[dataIndex] : null,
-                });
-              }
+              const v = ds.data[idx];
+              if (v == null) continue;
 
-              // Sort by value descending
-              allItems.sort((a, b) => {
-                const av = Number.isFinite(a.value) ? a.value : -Infinity;
-                const bv = Number.isFinite(b.value) ? b.value : -Infinity;
-                return bv - av;
+              allItems.push({
+                datasetIndex: i,
+                label: ds.label,
+                value: v,
+                sigma: Array.isArray(ds.sigma) ? ds.sigma[idx] : null,
               });
+              colorMap[i] = ds.borderColor;
+            }
 
-              // Find current item in sorted list
-              const sortedIndex = allItems.findIndex(item => item.datasetIndex === context.datasetIndex);
-              if (sortedIndex === -1) return '';
+            // Sort by value descending
+            allItems.sort((a, b) => {
+              const av = Number.isFinite(a.value) ? a.value : -Infinity;
+              const bv = Number.isFinite(b.value) ? b.value : -Infinity;
+              return bv - av;
+            });
 
-              // Show this item with its sorted-order content
-              const item = allItems[sortedIndex];
+            // Create custom tooltip HTML
+            let html = `<div style="padding: 8px 12px;"><div style="font-weight: bold; margin-bottom: 8px;">${labels[idx]}</div>`;
+            for (const item of allItems) {
+              const color = colorMap[item.datasetIndex] || '#ccc';
               const base = `${getAgentDisplayLabel(data, item.label)}: ${item.value !== null ? item.value.toFixed(1) : '-'}`;
-              return Number.isFinite(item.sigma) && item.sigma > 0 ? `${base} ± ${item.sigma.toFixed(1)}` : base;
-            },
+              const score = Number.isFinite(item.sigma) && item.sigma > 0 ? `${base} ± ${item.sigma.toFixed(1)}` : base;
+              html += `<div style="display: flex; align-items: center; gap: 8px; margin: 4px 0;">
+                <span style="width: 12px; height: 12px; background-color: ${color}; border-radius: 2px;"></span>
+                <span>${score}</span>
+              </div>`;
+            }
+            html += '</div>';
+
+            // Get or create tooltip element
+            let tooltipEl = document.getElementById('chartjs-tooltip');
+            if (!tooltipEl) {
+              tooltipEl = document.createElement('div');
+              tooltipEl.id = 'chartjs-tooltip';
+              tooltipEl.style.cssText = `
+                position: absolute;
+                background: rgba(0,0,0,0.85);
+                color: white;
+                border-radius: 4px;
+                pointer-events: none;
+                z-index: 9999;
+                font-family: 'Fira Code', monospace;
+                font-size: 16px;
+              `;
+              chart.canvas.parentNode.appendChild(tooltipEl);
+            }
+
+            if (tooltip.opacity === 0) {
+              tooltipEl.style.opacity = '0';
+              return;
+            }
+
+            tooltipEl.innerHTML = html;
+            tooltipEl.style.opacity = '1';
+            tooltipEl.style.left = tooltip.caretX + 'px';
+            tooltipEl.style.top = tooltip.caretY + 'px';
           },
         },
       },
