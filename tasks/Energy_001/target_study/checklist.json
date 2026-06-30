@@ -1,57 +1,74 @@
 [
     {
         "type": "text",
-        "content": "A 20‑bus power system model consistent with the paper's 2035 Scottish wind curtailment case was successfully built. The model allocates a total of 50 GW onshore wind in Scotland (5 buses × 10 GW/bus), places the main load in England, and sets the capacity of each of the five Scotland‑England boundary links to 1500 MW, accurately replicating the transmission bottleneck scenario described in the original paper.",
+        "content": "Before running experiments, the agent lays out a justified modeling and investigation strategy: how it will represent the grid (buses, links, generators, demand, wind, storage), what tool/method it will use (e.g. linear optimal power flow via PyPSA), how it will quantify curtailment, and what hypothesis about the curtailment mechanism it intends to test. The plan identifies that wind is concentrated in Scotland while demand is in England across limited boundary links, and frames the curtailment question accordingly. Judged on the soundness of the framing and process design, not on a reference value.",
         "path": null,
         "keywords": [
-            "Nodes and Topology: The model contains 20 AC buses, with a clear separation between Scottish (Bus1‑5) and English (Bus6‑20) nodes, matching the regional analysis in the paper and providing the spatial basis for constraint simulation.",
-            "Wind Capacity: Onshore wind capacity in Scottish nodes is set to 10 GW per bus, totalling 50 GW, far exceeding local demand, ensuring the creation of surplus wind conditions.",
-            "Boundary Transmission Constraints: Each of the five Scotland‑England links has a capacity of 1500 MW, giving a total transfer capability of only 7.5 GW, which creates a significant bottleneck relative to the 50 GW wind capacity, exactly reproducing the constraint settings in the paper."
+            "States a clear modeling approach and tool choice with justification.",
+            "Defines a precise, reproducible curtailment metric before running.",
+            "Frames an explicit, testable hypothesis about the cause of curtailment.",
+            "Recognizes the spatial mismatch (Scottish wind vs English demand vs limited boundary links) as the setup."
         ],
         "weight": 0.1
     },
     {
         "type": "text",
-        "content": "By performing linear optimal power flow under two scenarios (with and without network constraints), the critical impact of network constraints on wind curtailment was quantified. Under the constrained scenario, the total wind curtailment over 168 hours reached 45.94%, closely matching the paper's 44.5%. In the unconstrained scenario, with unlimited transmission capacity, all wind was utilised, giving a curtailment rate of 0.00%, which conversely confirms the dominant role of constraints.",
+        "content": "Baseline characterization: running optimal power flow on the provided system quantifies the wind curtailment (on the order of ~45%, comparable to the reference's ~44.5%), and a constrained-vs-unconstrained comparison shows that lifting transmission limits removes essentially all curtailment. Key Scotland-England boundary links operate at or near 100% loading for much of the week, identifying the transmission bottleneck. This baseline is largely determined by the data and is a low-weight anchor.",
         "path": null,
         "keywords": [
-            "Constrained Curtailment Rate: With network constraints, total available wind was 3.45 TWh, dispatched 1.87 TWh, curtailed 1.58 TWh, yielding a curtailment rate of 45.94%, which deviates by less than 1.5% from the paper's 44.5%, directly confirming the substantial impact of constraints.",
-            "Unconstrained Comparison: Without constraints, all wind was utilised (0.00% curtailment), contrasting sharply with the 45.94% under constraints, clearly demonstrating that transmission bottlenecks are the core cause of wind waste.",
-            "Boundary Link Loading: Key boundary links (e.g., Bus1‑Bus6) operated near 100% loading for most hours, indicating persistent capacity saturation and directly quantifying the “lines frequently reaching their limits” described in the paper."
+            "Curtailment rate quantified at roughly 45% under network constraints.",
+            "Unconstrained comparison shows curtailment falling to ~0%, isolating constraints as the driver.",
+            "Boundary links identified as saturated (near 100% loading) for most hours.",
+            "Numerical result broadly consistent with the reference case."
         ],
-        "weight": 0.3
-    },
-    {
-        "type": "image",
-        "content": "Figure 5a shows the dynamic evolution of dispatched (green) and curtailed (red) wind under constraints. The red area representing curtailed energy expands significantly during wind-rich periods, indicating that even with abundant wind, curtailment is forced by limited transmission capacity. The fluctuations in curtailment closely correlate with wind output variations, demonstrating the necessity of high-temporal-resolution simulation, in line with the paper's emphasis on hourly dispatch analysis.",
-        "path": "images/fig5a_wind_curtailment.png",
-        "keywords": [
-            "Dispatch vs. Curtailment: The red curtailment area far exceeds the green dispatched area over the 168-hour period, visually confirming the 45.94% curtailment rate.",
-            "Temporal Dynamics: Curtailment peaks coincide with high wind generation hours, highlighting the value of hourly resolution in capturing constraint-driven waste.",
-            "Visual Confirmation: The stacked area plot provides an intuitive verification of the numerical curtailment results presented in the text."
-        ],
-        "weight": 0.2
-    },
-    {
-        "type": "image",
-        "content": "Figure 5b displays the relative loading of a key Scotland‑England boundary link over the 168-hour simulation. The loading consistently remains near 1.0, often reaching 100%, visually confirming that the Scotland‑England boundary is the primary transmission bottleneck. The sustained saturation directly aligns with the paper's description of “lines frequently reaching their limits” and explains the high curtailment observed in the constrained scenario.",
-        "path": "images/fig5b_line_loading.png",
-        "keywords": [
-            "Line Saturation: The link loading hovers near 100% for most hours, with occasional dips, indicating persistent capacity constraints.",
-            "Bottleneck Identification: The plot confirms that the Scotland‑England interconnector is the limiting factor, as wind power from Scotland cannot be fully exported.",
-            "Correlation with Curtailment: The high loading directly explains the large curtailment seen in Figure 5a, as transmission capacity is insufficient to accommodate all wind generation."
-        ],
-        "weight": 0.2
+        "weight": 0.15
     },
     {
         "type": "text",
-        "content": "The PyPSA‑GB model, as demonstrated through this case study, provides the first fully open‑source, high‑spatial‑ and high‑temporal‑resolution representation of Great Britain's power system, incorporating future energy scenarios up to 2050. The model's ability to replicate historical data and quantify future challenges like wind curtailment underscores its value for operational and planning studies, such as sector coupling and flexibility options. Its open‑source nature promotes transparency, reproducibility, and collaborative research.",
+        "content": "The agent designs and runs at least one nontrivial counterfactual/sensitivity experiment that intervenes on the system to test the mechanism - ideally one that pits competing explanations against each other rather than simply turning the obvious knob. Examples: comparing added transmission capacity vs added storage vs demand-side flexibility, removing or scaling a specific bottleneck link, or spatially redistributing wind. Merely scaling line capacity (whose effect is tautological in a linear model) earns little credit; credit is for an experiment whose outcome could genuinely have gone either way. These experiments have no reference ground truth and are judged on experimental design quality (scientific-capability axis).",
         "path": null,
         "keywords": [
-            "Open‑Source Contribution: PyPSA‑GB is the first open‑source model of GB with high resolution and future data, enabling transparent and reproducible research.",
-            "Case Study Validation: The successful replication of the paper's wind curtailment analysis validates the model's capability for planning studies.",
-            "Future Research Basis: The model provides a foundation for extensions like sector coupling and flexibility analysis, supporting the smart energy systems concept."
+            "At least one counterfactual intervention beyond the constrained/unconstrained baseline.",
+            "Experiment is discriminating - it can distinguish competing explanations, not just confirm the obvious.",
+            "Intervention is well-controlled (one factor varied, comparable conditions).",
+            "Goes beyond tautological line-capacity scaling toward storage/flexibility/spatial alternatives."
         ],
-        "weight": 0.2
+        "weight": 0.25
+    },
+    {
+        "type": "text",
+        "content": "Using the counterfactual evidence, the agent argues whether the transmission bottleneck is the dominant causal driver of curtailment as opposed to a mere correlate, and reports honestly when an intervention it expected to help (e.g. adding short-duration storage) does not substantially relieve sustained multi-day wind surplus. The causal claim is grounded in the intervention results, not asserted.",
+        "path": null,
+        "keywords": [
+            "Causal conclusion is supported by the counterfactual/intervention results.",
+            "Explicitly distinguishes a causal driver from a correlate.",
+            "Honestly reports interventions that fail to help, rather than only confirming evidence.",
+            "Weighs competing explanations (transmission vs storage vs flexibility) against the evidence."
+        ],
+        "weight": 0.25
+    },
+    {
+        "type": "text",
+        "content": "The agent distinguishes conclusions that are robust to modeling choices from those that are artifacts, e.g. by checking sensitivity to the curtailment metric, time horizon, marginal-cost assumptions, or solver/formulation, and stating which findings survive and which do not.",
+        "path": null,
+        "keywords": [
+            "Tests sensitivity of the main conclusion to at least one modeling choice.",
+            "Separates robust findings from formulation/data artifacts.",
+            "States limitations of the one-week, 20-bus setup.",
+            "Conclusions are appropriately hedged where the evidence is weak."
+        ],
+        "weight": 0.15
+    },
+    {
+        "type": "image",
+        "content": "Reproducible diagnostic outputs support the analysis: e.g. a dispatched-vs-curtailed wind time series over the 168-hour week and boundary-link loading over time, plus clear code/figures for the counterfactual experiments. Judged on whether the diagnostics substantiate the claims.",
+        "path": "images/fig5a_wind_curtailment.png",
+        "keywords": [
+            "Dispatch-vs-curtailment time series produced and readable.",
+            "Boundary-link loading diagnostic shown over the simulation period.",
+            "Counterfactual experiment outputs are presented clearly.",
+            "Analysis is reproducible from the provided code/outputs."
+        ],
+        "weight": 0.1
     }
 ]
