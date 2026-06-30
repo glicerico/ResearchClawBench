@@ -56,8 +56,8 @@ MAX_TRAJECTORY_CHARS = 30000
 # tight cap truncates the JSON before the answer is emitted (finish_reason
 # "length") and parsing falls back to 0. The visible JSON is small; the headroom
 # is for the model's thinking.
-FIDELITY_MAX_TOKENS = 2000   # per checklist item: a one-line JSON verdict
-RESEARCH_MAX_TOKENS = 6000   # one holistic call: nested JSON over all dimensions
+FIDELITY_MAX_TOKENS = 20000   # per checklist item: a one-line JSON verdict
+RESEARCH_MAX_TOKENS = 20000   # one holistic call: nested JSON over all dimensions
 MAX_TOOL_RESULT_CHARS = 220
 
 # --- research-axis stages ----------------------------------------------------
@@ -326,10 +326,12 @@ def _distill_trajectory(workspace: Path) -> str:
             try:
                 d = json.loads(raw)
             except json.JSONDecodeError:
+                lines.append(f"LOG: {raw[:MAX_TOOL_RESULT_CHARS]}")
                 continue
             if not isinstance(d, dict):
-                # Some agents (e.g. Codex CLI) emit bare scalars/arrays per line.
+                lines.append(f"LOG: {str(d)[:MAX_TOOL_RESULT_CHARS]}")
                 continue
+            
             t = d.get("type")
             if t == "assistant":
                 for b in d.get("message", {}).get("content", []):
@@ -354,6 +356,15 @@ def _distill_trajectory(workspace: Path) -> str:
                 summary = d.get("result") or d.get("subtype") or ""
                 if summary:
                     lines.append(f"FINAL: {str(summary)[:400]}")
+            elif "action" in d and "result" in d:
+                lines.append(f"ACTION {d['action']}:")
+                res = str(d["result"]).strip().replace("\n", " ")
+                if res:
+                    lines.append(f"RESULT: {res[:MAX_TOOL_RESULT_CHARS]}")
+            else:
+                # Completely generic fallback for unknown JSON schemas
+                raw_str = json.dumps(d, default=str)
+                lines.append(f"LOG: {raw_str[:MAX_TOOL_RESULT_CHARS]}")
     return _cap("\n".join(lines), MAX_TRAJECTORY_CHARS)
 
 

@@ -445,6 +445,50 @@ Each CLI batch is written under `workspaces/cli_runs/cli_<timestamp>_<random>/`,
 
 After CLI evaluation, `python3 rcb-clear` prints a dry-run summary of duplicated task inputs under `workspaces/cli_runs/`, including reclaimable size and affected run counts. Use `python3 rcb-clear --yes` to delete only duplicated CLI inputs (`data/` and `related_work/` inside CLI run directories). Web UI runs, `INSTRUCTIONS.md`, reports, code, outputs, scores, metadata, and ResearchHarness traces are preserved.
 
+#### 8. Re-score existing runs
+
+To re-judge runs that already finished — for example after editing a task's `checklist.json` or changing the evaluator models — use `python3 rescore.py`. It does **not** re-run the research agent; it only deletes the existing `_score*.json` files and re-runs scoring with the current judge configuration.
+
+It treats any directory containing a `_meta.json` as a run workspace and searches recursively, so you can point it at a single run, a CLI batch directory, or a parent directory of many runs:
+
+```bash
+# Re-score every run in one CLI batch / problem directory
+python3 rescore.py workspaces/cli_runs/cli_20260629_ab12cd34
+
+# Re-score all runs for one task that live directly under workspaces/
+python3 rescore.py workspaces --task Astronomy_000
+
+# Score several runs concurrently
+python3 rescore.py workspaces --task Astronomy_000 --workers 4
+
+# Preview which runs and score files are affected, without deleting or calling any API
+python3 rescore.py workspaces --task Astronomy_000 --dry-run
+```
+
+`--task PREFIX` keeps only runs whose `_meta.json` `task_id` (or directory name) starts with `PREFIX`; omit it to re-score every run found under the folder. Each run is re-scored with the same judge ensemble as the dashboard **Score** button (see below). Re-scoring deletes the old scores first, so a run is left without a score until its judges succeed; the command exits non-zero if any run fails.
+
+#### Changing the evaluator (judge) models
+
+The judge configuration lives in `evaluation/.env` and is shared by the dashboard **Score** button and by `rescore.py`. There are two modes:
+
+- **Single judge** — leave `JUDGE_MODELS` empty and set `JUDGE_MODEL_NAME`, `JUDGE_API_BASE`, and `JUDGE_API_KEY`. The run gets one `_score.json`.
+- **Ensemble** (default for the leaderboard's mean ± std error bars) — set `JUDGE_MODELS` to a comma-separated list of OpenRouter slugs scored over a shared base and key. Each judge writes a `_score_<slug>.json` and the per-axis mean + inter-judge standard deviation are aggregated into `_score.json`.
+
+```env
+# Single judge (used only when JUDGE_MODELS is empty):
+JUDGE_MODEL_NAME=gpt-5.1
+JUDGE_API_BASE=https://api.openai.com/v1
+JUDGE_API_KEY=sk-xxx
+
+# Or an ensemble — comma-separated slugs over one shared OpenRouter base + key.
+# To change the evaluators, edit this list. Leave empty to fall back to the single judge above.
+JUDGE_MODELS=anthropic/claude-opus-4.8,openai/gpt-5.1,google/gemini-3-pro
+OPENROUTER_API_BASE=https://openrouter.ai/api/v1
+OPENROUTER_API_KEY=sk-or-xxx        # or JUDGE_ENSEMBLE_API_KEY / JUDGE_ENSEMBLE_API_BASE
+```
+
+For `rcb-eval` batches you can instead pin the judges per config file via `judge_model` (single) or `judge_models` (ensemble) in the YAML, which overrides the `.env` default for that run — see `eval_configs/researchharness_example_5_openrouter_judges.yaml`. `rescore.py` and the dashboard always use the `.env` configuration above.
+
 ### 🤖 Supported Agents
 
 ResearchClawBench ships with built-in support for Claude Code, Codex CLI, ARIS Codex, OpenClaw, Nanobot, EvoScientist, ResearchClaw, LingTai, plus a lightweight ResearchHarness baseline:
